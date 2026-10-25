@@ -54,12 +54,30 @@ class TaskRow(Base):
     deadline_min: Mapped[float | None] = mapped_column(nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     kind: Mapped[str] = mapped_column(String(10), default="task")  # task | undo (a compensation step)
+    override: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)  # WRK-02 check
     level: Mapped[int] = mapped_column(Integer, default=0)  # escalation level (ENG-06)
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | claimed | done | cancelled
     assignee: Mapped[str | None] = mapped_column(String(254), nullable=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OverrideRow(Base):
+    """WRK-02 audit trail: every time a person changed a suggestion, and why."""
+
+    __tablename__ = "overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(Integer, index=True)
+    case_id: Mapped[str] = mapped_column(String(36))
+    patient_id: Mapped[str] = mapped_column(String(64), default="")
+    node: Mapped[str] = mapped_column(String(64))
+    suggested: Mapped[str] = mapped_column(String(100))
+    decided: Mapped[str] = mapped_column(String(100))
+    reason: Mapped[str] = mapped_column(String(1000))
+    by: Mapped[str] = mapped_column(String(254))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class NotificationRow(Base):

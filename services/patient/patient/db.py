@@ -52,6 +52,20 @@ class PatientRow(Base):
         return f"P{self.id:06d}"
 
 
+class BedRow(Base):
+    """PAT-02: a bed, reserved by a Visit case (BedService task) and occupied on admission."""
+
+    __tablename__ = "beds"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)  # e.g. W1-03
+    ward: Mapped[str] = mapped_column(String(40), index=True)
+    status: Mapped[str] = mapped_column(String(10), default="free")  # free | reserved | occupied
+    patient_id: Mapped[str] = mapped_column(String(64), default="")
+    case_id: Mapped[str] = mapped_column(String(36), default="")
+    wait_id: Mapped[str] = mapped_column(String(120), default="")  # the engine request that reserved it
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def make_engine(url: str | None = None) -> Engine:
     url = url or os.environ.get("DATABASE_URL", "sqlite:///./patient.db")
     if url.startswith("postgresql://"):

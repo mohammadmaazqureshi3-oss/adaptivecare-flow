@@ -25,11 +25,19 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from worklist.db import Database, NotificationRow, TaskRow, iso, make_engine, now
+from worklist.db import Database, NotificationRow, OverrideRow, TaskRow, iso, make_engine, now
 
 
 class CompleteIn(BaseModel):
     outputs: dict[str, Any]
+    reason: str | None = None  # WRK-02: required when the decision differs from the suggestion
+
+
+class FailIn(BaseModel):
+    reason: str
+
+
+MIN_REASON = 5
 
 
 def type_ok(value: Any, var_type: str) -> bool:
@@ -60,6 +68,7 @@ def task_out(t: TaskRow) -> dict[str, Any]:
         "due_at": iso(t.due_at),
         "kind": t.kind,
         "level": t.level,
+        "override": t.override,
         "status": t.status,
         "assignee": t.assignee,
         "result": t.result,
@@ -151,6 +160,7 @@ class Consumer:
             deadline_min=deadline.get("minutes"),
             due_at=_parse(p.get("due_at")),
             kind="undo" if e.type == "CompensateRequested" else "task",
+            override=p.get("override"),
         )
 
 
@@ -252,15 +262,95 @@ def complete(
             status.HTTP_422_UNPROCESSABLE_CONTENT, f"missing or invalid outputs: {', '.join(bad)}"
         )
     outputs = {o["name"]: body.outputs[o["name"]] for o in t.outputs}
+    changed = check_override(s, t, outputs, body.reason, email)
     request_event = Event.from_json(t.request_json)
     if t.kind == "undo":  # a compensation step answers Compensated (ENG-08)
         add_to_outbox(s, request_event.reply("Compensated", {"ok": True, "completed_by": email}))
     else:
-        add_to_outbox(s, request_event.reply("TaskCompleted", {"outputs": outputs, "completed_by": email}))
+        payload: dict[str, Any] = {"outputs": outputs, "completed_by": email}
+        if changed:
+            payload["override"] = changed
+        add_to_outbox(s, request_event.reply("TaskCompleted", payload))
     t.status, t.result, t.completed_at = "done", outputs, now()
     s.commit()
     request.app.state.relay.notify()
     return task_out(t)
+
+
+def check_override(
+    s: Session, t: TaskRow, outputs: dict[str, Any], reason: str | None, email: str
+) -> dict[str, Any] | None:
+    """WRK-02: a decision that differs from the suggestion needs a reason, which is logged."""
+    if not t.override:
+        return None
+    suggested, decided = t.inputs.get(t.override["suggested"]), outputs.get(t.override["decided"])
+    if decided == suggested:
+        return None
+    if reason is None or len(reason.strip()) < MIN_REASON:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"changing the suggested {t.override['suggested']} ({suggested}) to {decided} needs a reason",
+        )
+    s.add(
+        OverrideRow(
+            task_id=t.id,
+            case_id=t.case_id,
+            patient_id=t.patient_id,
+            node=t.node,
+            suggested=str(suggested),
+            decided=str(decided),
+            reason=reason.strip(),
+            by=email,
+        )
+    )
+    return {"suggested": suggested, "decided": decided, "reason": reason.strip()}
+
+
+@router.post("/tasks/{task_id}/fail")
+def fail(
+    task_id: int, body: FailIn, request: Request, s: SessionDep, email: Email, role: Role
+) -> dict[str, Any]:
+    """Report that a claimed task cannot be done (e.g. the transfer is impossible): the
+    engine then takes the fallback branch or undoes the finished steps (ENG-08)."""
+    t = get_task(s, task_id, role)
+    if t.status != "claimed" or t.assignee != email:
+        raise HTTPException(status.HTTP_409_CONFLICT, "claim the task before reporting a problem")
+    if len(body.reason.strip()) < MIN_REASON:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "say what went wrong")
+    request_event = Event.from_json(t.request_json)
+    if t.kind == "undo":
+        add_to_outbox(
+            s, request_event.reply("Compensated", {"ok": False, "reason": body.reason, "by": email})
+        )
+    else:
+        add_to_outbox(
+            s, request_event.reply("TaskFailed", {"reason": body.reason, "temporary": False, "by": email})
+        )
+    t.status, t.result, t.completed_at = "failed", {"problem": body.reason.strip()}, now()
+    s.commit()
+    request.app.state.relay.notify()
+    return task_out(t)
+
+
+@router.get("/overrides")
+def overrides(s: SessionDep, limit: int = 100) -> list[dict[str, Any]]:
+    """WRK-02 audit: who changed which suggestion, to what, and why (managers, admins)."""
+    q = select(OverrideRow).order_by(OverrideRow.id.desc()).limit(min(limit, 500))
+    return [
+        {
+            "id": o.id,
+            "task_id": o.task_id,
+            "case_id": o.case_id,
+            "patient_id": o.patient_id,
+            "node": o.node,
+            "suggested": o.suggested,
+            "decided": o.decided,
+            "reason": o.reason,
+            "by": o.by,
+            "at": iso(o.at),
+        }
+        for o in s.scalars(q)
+    ]
 
 
 def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:

@@ -102,6 +102,17 @@ export function NodeInspector({ node, nodes, variables, readOnly, onChange, onDe
         </>
       )}
 
+      {type === "end" && (
+        <Field label="Announce an event when a case ends here (starts other pathways)">
+          <input
+            value={d.emit ?? ""}
+            disabled={readOnly}
+            placeholder="TriageCompleted"
+            onChange={(e) => onChange({ emit: e.target.value || undefined })}
+          />
+        </Field>
+      )}
+
       {type === "timer" && (
         <Field label="Wait (minutes)">
           <input
@@ -262,6 +273,41 @@ function TaskFields({ node, nodes, variables, readOnly, onChange }: Omit<NodePro
         <Field label="Undo action (compensation)">
           <input value={d.undo ?? ""} disabled={readOnly} placeholder="ReleaseBed" onChange={(e) => onChange({ undo: e.target.value })} />
         </Field>
+      </details>
+
+      <details open={!!d.override}>
+        <summary>Override check (WRK-02)</summary>
+        <p className="muted small">A person may change the suggestion only with a reason, which is logged.</p>
+        <Field label="Suggested value (an input)">
+          <select
+            value={d.override?.suggested ?? ""}
+            disabled={readOnly}
+            onChange={(e) =>
+              onChange({
+                override: e.target.value ? { suggested: e.target.value, decided: d.override?.decided ?? "" } : undefined,
+              })
+            }
+          >
+            <option value="">— none —</option>
+            {(d.inputs ?? []).map((v) => (
+              <option key={v}>{v}</option>
+            ))}
+          </select>
+        </Field>
+        {d.override && (
+          <Field label="Decided value (an output)">
+            <select
+              value={d.override.decided}
+              disabled={readOnly}
+              onChange={(e) => onChange({ override: { ...d.override!, decided: e.target.value } })}
+            >
+              <option value="">— choose —</option>
+              {(d.outputs ?? []).map((v) => (
+                <option key={v}>{v}</option>
+              ))}
+            </select>
+          </Field>
+        )}
       </details>
 
       <details open={!!d.duration}>

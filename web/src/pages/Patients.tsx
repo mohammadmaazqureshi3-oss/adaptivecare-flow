@@ -3,6 +3,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type ArrivalMode, type Patient, type PatientIn, type Sex } from "../api";
+import { Beds } from "./Beds";
 
 const SEXES: [Sex, string][] = [
   ["female", "Female"],
@@ -152,6 +153,7 @@ export function Patients() {
         )}
       </form>
       {notice && <div className={`notice-inline ${notice.kind}`}>{notice.text}</div>}
+      <Beds />
 
       <div className="row-form">
         <label className="grow">

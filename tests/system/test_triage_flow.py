@@ -46,7 +46,8 @@ class Stack:
         self.engine = stack.enter_context(TestClient(engine_app(triage, engine_store, self.bus)))
         self.worklist = stack.enter_context(TestClient(worklist_app(worklist_store, self.bus)))
         self.patient = stack.enter_context(TestClient(patient_app(patient_store, self.bus)))
-        stack.enter_context(TestClient(ml_app(self.bus)))
+        # No model file: ml fails permanently, as if the model were withdrawn (ML-02 fallback).
+        stack.enter_context(TestClient(ml_app(self.bus, model_path=tmp / "no-model.joblib")))
         self.bus.start()
         stack.callback(self.bus.stop)
 
@@ -89,7 +90,7 @@ def test_a_registered_patient_flows_through_triage_to_completion(stack: Stack) -
     # ENG-01: the registration starts one case (despite every message arriving twice)
     case = stack.wait_for(lambda: stack.cases()[0] if stack.cases() else None)
     assert case["patient_id"] == mrn and len(stack.cases()) == 1
-    # The model is not trained yet: ml fails permanently, the fallback asks a nurse instead.
+    # No model: ml fails permanently, the fallback asks a nurse instead.
     stack.wait_for(lambda: {t["label"] for t in stack.tasks()} == {"Manual triage", "Measure vital signs"})
     stack.do("Manual triage", urgency=4, confidence=0.9)
     stack.do("Measure vital signs", spo2=86)

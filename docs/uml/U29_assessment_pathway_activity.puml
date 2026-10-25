@@ -1,0 +1,33 @@
+@startuml U29_assessment_pathway_activity
+!include style.iuml
+title U29 — Assessment v1 (activity, exported from the pathway model)
+start
+:Triage completed;
+note right: started by **TriageCompleted**
+fork
+  :Blood tests\n<size:10>nurse</size>;
+  note right
+    writes lab_abnormal
+    deadline 60 min, escalates to charge_nurse (+15 min)
+  end note
+fork again
+  :Imaging and report\n<size:10>doctor</size>;
+  note right
+    writes imaging_abnormal
+  end note
+end fork
+:Doctor review\n<size:10>doctor</size>;
+note right
+  writes admit, plan
+  deadline 30 min
+end note
+if (Admit?) then (admit p=0.3)
+  :Admission requested;
+  note right: announces **AdmissionRequested**
+  stop
+else (default p=0.7)
+  :Discharge with advice\n<size:10>nurse</size>;
+  :Discharged;
+  stop
+endif
+@enduml

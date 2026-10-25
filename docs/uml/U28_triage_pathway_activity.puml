@@ -1,0 +1,43 @@
+@startuml U28_triage_pathway_activity
+!include style.iuml
+title U28 — Emergency triage v2 (activity, exported from the pathway model)
+start
+:Patient registered;
+note right: started by **PatientRegistered**
+:Measure vital signs\n<size:10>nurse</size>;
+note right
+  writes spo2, sbp, hr, rr, temp, pain, mental
+  deadline 10 min, escalates to charge_nurse (+5 min)
+end note
+:Predict urgency\n<size:10>PredictUrgency (ml)</size>;
+note right
+  writes urgency, confidence, triage_note
+  retries 2× from 1 s, doubling
+  fails for good → fallback **manual_triage**
+end note
+if (Red flags or unsure?) then (spo2 < 90 or sbp < 80 or urgency <= 2 or confidence < 0.7 p=0.35)
+  :Confirm urgency (urgent)\n<size:10>nurse</size>;
+  note right
+    writes confirmed_urgency
+    deadline 5 min, escalates to charge_nurse (+3 min)
+    changing urgency → confirmed_urgency needs a reason
+  end note
+else (default p=0.65)
+  :Confirm urgency\n<size:10>nurse</size>;
+  note right
+    writes confirmed_urgency
+    changing urgency → confirmed_urgency needs a reason
+  end note
+endif
+:Triage complete;
+note right: announces **TriageCompleted**
+stop
+
+partition "fallback: Manual triage (model unavailable)" {
+  :Manual triage (model unavailable)\n<size:10>nurse</size>;
+  note right
+    writes urgency, confidence, triage_note
+  end note
+  note right: then continues at merge_pred
+}
+@enduml

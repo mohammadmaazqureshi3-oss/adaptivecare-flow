@@ -5,6 +5,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY packages/care-events /tmp/care-events
 RUN pip install --no-cache-dir /tmp/care-events
 COPY services/ml/ml ./ml
+COPY services/ml/models ./models
 USER nobody
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \

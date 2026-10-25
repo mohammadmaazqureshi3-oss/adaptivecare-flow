@@ -7,6 +7,7 @@ import { api, type Task, type User } from "../api";
 const REFRESH_MS = 3000;
 
 function minutesLeft(t: Task, now: number): number | null {
+  if (t.due_at) return Math.round((new Date(t.due_at).getTime() - now) / 60_000);
   if (t.deadline_min == null) return null;
   const due = new Date(t.created_at).getTime() + t.deadline_min * 60_000;
   return Math.round((due - now) / 60_000);
@@ -29,6 +30,30 @@ function CompleteForm({ task, onDone }: { task: Task; onDone: (msg: string) => v
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+
+  // WRK-02: changing the suggestion (e.g. the ML urgency) needs a reason, which is logged.
+  const suggested = task.override ? task.inputs[task.override.suggested] : undefined;
+  const decidedRaw = task.override ? values[task.override.decided] : undefined;
+  const overriding =
+    task.override != null && decidedRaw !== "" && decidedRaw !== undefined && String(decidedRaw) !== String(suggested);
+
+  async function reportProblem() {
+    if (!problem || problem.trim().length < 5) {
+      setError("Say what went wrong (at least a few words).");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.failTask(task.id, problem);
+      onDone(`Problem reported for ${task.label}: the pathway takes its fallback or undoes finished steps.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not report the problem");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit() {
     const outputs: Record<string, unknown> = {};
@@ -48,7 +73,12 @@ function CompleteForm({ task, onDone }: { task: Task; onDone: (msg: string) => v
     setBusy(true);
     setError(null);
     try {
-      await api.completeTask(task.id, outputs);
+      if (overriding && reason.trim().length < 5) {
+        setError(`Changing the suggested ${task.override!.suggested} (${String(suggested)}) needs a reason.`);
+        setBusy(false);
+        return;
+      }
+      await api.completeTask(task.id, outputs, overriding ? reason : undefined);
       onDone(`${task.label} completed for ${task.patient_id}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not complete the task");
@@ -86,10 +116,30 @@ function CompleteForm({ task, onDone }: { task: Task; onDone: (msg: string) => v
         </label>
       ))}
       {task.outputs.length === 0 && <p className="muted small">This task records no values.</p>}
-      {error && <p className="error small">{error}</p>}
       <button className="primary" disabled={busy} onClick={submit}>
         Complete
       </button>
+      <button className="ghost" disabled={busy} onClick={() => setProblem(problem === null ? "" : null)}>
+        Report a problem
+      </button>
+      {overriding && (
+        <label className="override">
+          <span>
+            Reason for changing the suggested {task.override!.suggested} ({String(suggested)}): required, logged
+          </span>
+          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+      )}
+      {problem !== null && (
+        <label className="override">
+          <span>What went wrong? The pathway takes its fallback, or undoes the steps already done.</span>
+          <textarea rows={2} value={problem} onChange={(e) => setProblem(e.target.value)} />
+          <button className="danger-solid fit" disabled={busy} onClick={reportProblem}>
+            Report the problem
+          </button>
+        </label>
+      )}
+      {error && <p className="error small">{error}</p>}
     </div>
   );
 }
@@ -153,13 +203,16 @@ export function Tasks({ user }: { user: User }) {
               Release
             </button>
           </div>
+          {typeof t.inputs.triage_note === "string" && <div className="ml-note">{t.inputs.triage_note}</div>}
           {Object.keys(t.inputs).length > 0 && (
             <div className="task-inputs small">
-              {Object.entries(t.inputs).map(([k, v]) => (
-                <span key={k}>
-                  {k}: <Value v={v} />
-                </span>
-              ))}
+              {Object.entries(t.inputs)
+                .filter(([k]) => k !== "triage_note")
+                .map(([k, v]) => (
+                  <span key={k}>
+                    {k}: <Value v={v} />
+                  </span>
+                ))}
             </div>
           )}
           <CompleteForm task={t} onDone={(msg) => act(async () => undefined, msg)} />

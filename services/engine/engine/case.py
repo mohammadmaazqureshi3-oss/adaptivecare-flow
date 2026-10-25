@@ -25,7 +25,7 @@ from typing import Any
 from care_events import Event, derived_id
 from pathway_core import Node, Pathway
 from pathway_core.conditions import EvaluationError, Expr, evaluate, parse
-from pathway_core.settings import deadline, retry, undo
+from pathway_core.settings import deadline, emit, retry, undo
 
 FINAL = frozenset({"completed", "compensated", "failed", "cancelled"})
 ACTIVE = frozenset({"running", "compensating"})
@@ -364,11 +364,14 @@ class Case:
         self._request(tok, node)
 
     def _end(self, tok: Token, node: Node) -> None:
-        """Rule 8: End takes the token; the case is complete when none is left."""
+        """Rule 8: End takes the token; the case is complete when none is left.
+        An End may announce an event that starts another pathway (e.g. TriageCompleted)."""
         del self.tokens[tok.id]
         if not any(t.state != "cancelled" for t in self.tokens.values()):
             self.status = "completed"
-            self._send("CaseCompleted", {"data": self.data})
+            self._send("CaseCompleted", {"data": self.data, "end": node.id})
+            if announced := emit(node):
+                self._send(announced, {**self.data, "from_case": self.id, "from_pathway": self.pathway.id})
 
     def _decide(self, tok: Token, node: Node) -> None:
         """Rule 3: the first branch whose condition holds, otherwise the default."""
@@ -427,6 +430,7 @@ class Case:
             "inputs": {v: self.data.get(v) for v in node.inputs},
             "outputs": [{"name": v, "type": self.var_types.get(v, "string")} for v in node.outputs],
             "deadline": node.settings.get("deadline"),
+            "override": node.settings.get("override"),  # WRK-02: a change needs a reason
             "due_at": self._at(timedelta(minutes=chain.minutes)) if chain else None,
             "patient_id": self.data.get("patient_id"),
         }

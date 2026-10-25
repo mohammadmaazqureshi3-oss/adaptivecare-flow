@@ -247,3 +247,78 @@ def test_compensation_does_not_cancel_its_own_undo_tasks(client: TestClient) -> 
     )
     deliver(client, Event("CaseCompensated", {}, case_id="case-1"))
     assert [t["kind"] for t in client.get("/tasks", headers=NURSE).json()] == ["undo"]
+
+
+# ---- WRK-02: override only with a reason; reporting a problem ---------------------------
+
+
+def confirm_request() -> Event:
+    return Event(
+        "TaskRequested",
+        {
+            "node": "confirm",
+            "label": "Confirm urgency",
+            "role": "nurse",
+            "patient_id": "P000009",
+            "inputs": {"urgency": 2, "triage_note": "ML: level 2"},
+            "outputs": [{"name": "confirmed_urgency", "type": "int"}],
+            "override": {"suggested": "urgency", "decided": "confirmed_urgency"},
+        },
+        event_id="req-confirm",
+        case_id="case-9",
+        token_id="t0@confirm#4",
+        pathway="triage",
+        version=2,
+        target="worklist",
+    )
+
+
+def claimed_confirm(client: TestClient) -> int:
+    deliver(client, confirm_request())
+    tid = client.get("/tasks", headers=NURSE).json()[0]["id"]
+    client.post(f"/tasks/{tid}/claim", headers=NURSE)
+    return int(tid)
+
+
+def test_wrk02_agreeing_with_the_suggestion_needs_no_reason(client: TestClient) -> None:
+    tid = claimed_confirm(client)
+    r = client.post(f"/tasks/{tid}/complete", json={"outputs": {"confirmed_urgency": 2}}, headers=NURSE)
+    assert r.status_code == 200
+    assert client.get("/overrides").json() == []
+
+
+def test_wrk02_overriding_needs_a_reason_which_is_logged(client: TestClient, db: Database) -> None:
+    tid = claimed_confirm(client)
+    body = {"outputs": {"confirmed_urgency": 1}}
+    r = client.post(f"/tasks/{tid}/complete", json=body, headers=NURSE)
+    assert r.status_code == 422 and "needs a reason" in r.json()["detail"]
+    r = client.post(f"/tasks/{tid}/complete", json={**body, "reason": "ok"}, headers=NURSE)
+    assert r.status_code == 422  # too short to explain anything
+    reason = "Patient grey and sweating; looks worse than the vitals suggest"
+    assert (
+        client.post(f"/tasks/{tid}/complete", json={**body, "reason": reason}, headers=NURSE).status_code
+        == 200
+    )
+    [log] = client.get("/overrides").json()
+    assert (log["suggested"], log["decided"], log["reason"], log["by"]) == ("2", "1", reason, "nadia@x.org")
+    with db.sessions() as s:
+        reply = Event.from_json(s.scalars(select(OutboxRow)).one().event_json)
+    assert reply.payload["override"]["reason"] == reason and reply.payload["outputs"] == {
+        "confirmed_urgency": 1
+    }
+
+
+def test_reporting_a_problem_fails_the_task(client: TestClient, db: Database) -> None:
+    deliver(client, request())
+    tid = client.get("/tasks", headers=NURSE).json()[0]["id"]
+    assert (
+        client.post(f"/tasks/{tid}/fail", json={"reason": "no porter available"}, headers=NURSE).status_code
+        == 409
+    )
+    client.post(f"/tasks/{tid}/claim", headers=NURSE)
+    assert client.post(f"/tasks/{tid}/fail", json={"reason": "no"}, headers=NURSE).status_code == 422
+    r = client.post(f"/tasks/{tid}/fail", json={"reason": "no porter available"}, headers=NURSE)
+    assert r.status_code == 200 and r.json()["status"] == "failed"
+    with db.sessions() as s:
+        reply = Event.from_json(s.scalars(select(OutboxRow)).one().event_json)
+    assert reply.type == "TaskFailed" and reply.payload["temporary"] is False

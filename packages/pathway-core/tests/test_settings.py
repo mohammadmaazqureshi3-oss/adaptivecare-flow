@@ -144,3 +144,42 @@ def test_typed_duration() -> None:
 def test_timer_needs_a_positive_wait() -> None:
     assert settings_issues(Node(id="w", type="timer", minutes=0)) != []
     assert settings_issues(Node(id="w", type="timer", minutes=5)) == []
+
+
+# ---- Sprint 6: End emits an event; override check (WRK-02) ----------------------------
+
+
+@pytest.mark.parametrize(
+    "name,ok", [("TriageCompleted", True), ("triageDone", False), ("A b", False), (None, True)]
+)
+def test_end_can_emit_a_well_named_event(name: str | None, ok: bool) -> None:
+    from pathway_core.settings import emit
+
+    node = Node(id="e", type="end", settings={} if name is None else {"emit": name})
+    assert (settings_issues(node) == []) is ok
+    assert emit(node) == name
+
+
+def test_wrk02_override_check_names_an_input_and_an_output() -> None:
+    from pathway_core.settings import override
+
+    good = Node(
+        id="c",
+        type="task",
+        kind="human",
+        role="nurse",
+        inputs=("urgency",),
+        outputs=("confirmed",),
+        settings={"override": {"suggested": "urgency", "decided": "confirmed"}},
+    )
+    assert settings_issues(good) == [] and override(good) is not None
+    bad = Node(
+        id="c",
+        type="task",
+        kind="human",
+        role="nurse",
+        inputs=("urgency",),
+        outputs=("confirmed",),
+        settings={"override": {"suggested": "confirmed", "decided": "urgency"}},
+    )
+    assert any("override check" in i for i in settings_issues(bad))

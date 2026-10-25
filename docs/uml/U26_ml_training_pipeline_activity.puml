@@ -1,0 +1,27 @@
+@startuml U26_ml_training_pipeline_activity
+!include style.iuml
+title U26 — ML training pipeline (activity, Sprint 6) · services/ml/training/train.py
+
+start
+if (KTAS study file at data/ktas/data.csv?) then (yes)
+  :load_ktas: semicolons, decimal commas,\nlabel = KTAS_expert;
+else (no: documented fallback, risk R6)
+  :synthetic(6000, seed 7): physiology by level,\n10% ambiguous labels;
+endif
+:1. clean: impossible values → missing\n(SBP 40–260, HR 20–250, RR 4–60, BT 30–43, SpO₂ 50–100);
+:features(): 17 features shared with serving;
+:2. stratified train / test split (80 / 20);
+:3. 5-fold CV: logistic regression (baseline),\nrandom forest, gradient boosting;
+:4. class weights "balanced" for the rare levels 1–2;
+:select by ½ urgent recall + ½ macro F1;
+:5. sigmoid calibration (5-fold);\nout-of-fold probabilities → threshold τ on P(1)+P(2)\nfor urgent recall ≥ 90%;
+:test set: urgent recall, under/over-triage,\nmacro F1, Brier, confusion matrix, calibration;
+:SHAP background sample from the training set;
+:6. save models/urgency-v1[-synthetic].joblib\n+ docs/ml/model-card.md + metrics.json;
+stop
+note right
+  Measured on the synthetic data:
+  urgent recall 0.899 with τ = 0.23
+  (0.696 with "most likely level").
+end note
+@enduml

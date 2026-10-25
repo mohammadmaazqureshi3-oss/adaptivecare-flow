@@ -1,0 +1,21 @@
+@startuml U30_visit_pathway_activity
+!include style.iuml
+title U30 — Ward visit and admission v1 (activity, exported from the pathway model)
+start
+:Admission requested;
+note right: started by **AdmissionRequested**
+:Reserve a bed\n<size:10>BedService (service)</size>;
+note right
+  writes bed_id
+  retries 3× from 30 s, doubling
+  undo: ReleaseBed
+end note
+:Prepare ward handover\n<size:10>nurse</size>;
+:Transfer to ward\n<size:10>nurse</size>;
+note right
+  deadline 60 min, escalates to charge_nurse (+15 min)
+end note
+:Admitted;
+note right: announces **PatientAdmitted**
+stop
+@enduml

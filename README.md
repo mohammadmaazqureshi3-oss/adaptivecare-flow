@@ -25,7 +25,7 @@ engine in the same process instead of a Docker container.
 
 ```bash
 ./scripts/dev.sh                          # gateway :8000 … deployer :8007, simulator :8008, engines :8010+
-.venv/bin/python scripts/seed_demo.py     # demo users, pathways (Triage published and deployed), patients
+.venv/bin/python scripts/seed_demo.py     # demo users, beds, the clinical pathways verified, published, deployed
 npm --prefix web install && npm --prefix web run dev   # editor on http://localhost:5173
 ```
 
@@ -40,13 +40,19 @@ python3 -m venv .venv
 .venv/bin/ruff check packages services
 .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient \
   services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer \
-  services/simulator/simulator packages/care-events/src
+  services/simulator/simulator packages/care-events/src services/ml/training
 npm --prefix web test && npm --prefix web run typecheck
 ```
 
 If `import pathway_core` fails outside the repo root on macOS with Python 3.13, macOS has
 marked the venv's `.pth` files hidden and Python skips them. Fix:
 `chflags nohidden .venv/lib/python3.*/site-packages/*.pth`
+
+Retrain the urgency model (uses `data/ktas/data.csv` when present, otherwise synthetic data):
+
+```bash
+cd services/ml && PYTHONPATH=. ../../.venv/bin/python -m training.train
+```
 
 Run the verifier on its own:
 
@@ -64,19 +70,21 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | `services/auth/` | Users, roles, bcrypt, JWT access/refresh tokens (AUTH-01/02) |
 | `services/gateway/` | Single entry point: token check, permission matrix, proxy (AUTH-03) |
 | `services/designer/` | Pathways, versions, Verify, Publish, live condition checks (DES-01..05) |
-| `services/patient/` | Register and search patients (PAT-01); publishes `PatientRegistered` |
+| `services/patient/` | Patients (PAT-01) and beds (PAT-02, the `BedService` worker); publishes `PatientRegistered` |
 | `packages/care-events/` | Event envelope, bus (in-memory and RabbitMQ), outbox and inbox |
 | `services/engine/` | **Algorithm 2** — token interpreter, event store, replay, snapshots, timers, retries, escalation, compensation |
 | `services/worklist/` | Tasks for people: claim and complete with required outputs (WRK-01) |
-| `services/ml/` | Placeholder until Sprint 6: answers `PredictUrgency` with a permanent failure |
+| `services/ml/` | Urgency model: training pipeline (`training/`), prediction with SHAP reasons (ML-01/02) |
 | `services/deployer/` | Deploy: PIM → PSM, start the engine, health check (DEP-01); undeploy with draining (DEP-02) |
 | `services/simulator/` | **Algorithm 3** — discrete-event simulation, 95% intervals, Staffing Advisor, Erlang C validation |
 | `tests/system/` | In-process system test: patient → engine → ml → worklist |
 | `web/` | React + React Flow pathway editor and admin pages |
-| `scripts/` | `dev.sh` (run without Docker), `seed_demo.py` (demo users and pathways) |
-| `pathways/` | `triage.json` (SAFE), `imaging_deadlock.json` (the worked example, UNSAFE), `imaging_fixed.json` |
+| `scripts/` | `dev.sh` (run without Docker), `seed_demo.py`, `export_uml.py` (pathway → PlantUML) |
+| `docs/ml/` | Model card and metrics of the urgency model |
+| `pathways/clinical/` | **CLN-01..03**: Triage v2, Assessment, Visit, chained by the events their End nodes announce |
+| `pathways/` | Examples: `triage.json` (v1, parallel), `imaging_deadlock.json` (UNSAFE), `imaging_fixed.json` |
 | `contracts/events.md` | Event envelope and catalog, REST contract |
-| `docs/uml/` | PlantUML diagrams (U01–U25, U31, U32, E1) |
+| `docs/uml/` | PlantUML diagrams (U01–U32 except U31/U32 finals, E1) |
 | `docs/ai-log/` | Prompt log per sprint (requirement P21) |
 | `docs/daily/` | Daily scrum notes |
 | `CLAUDE.md` | Rules file for AI tools |
@@ -91,4 +99,5 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | 3 | Algorithm 2: Engine core | Done: ENG-01..05, WRK-01, fault-injection and replay tests; RabbitMQ run pending (Docker) |
 | 4 | Algorithm 2 reliability and Deploy | Done: ENG-06..09, DEP-01; Docker runtime and RabbitMQ not yet run (Docker) |
 | 5 | Algorithm 3: Simulator and Advisor | Done: SIM-01..04, DES-06, DEP-02; Erlang C 92/100, NFR-PERF-03 5 s |
-| 6–7 | ML and the three clinical pathways, hardening | Not started |
+| 6 | ML and the three clinical pathways | Done: ML-01/02 (synthetic data until the KTAS file is added), WRK-02, PAT-02, CLN-01..03 |
+| 7 | Hardening and measurement | Not started |

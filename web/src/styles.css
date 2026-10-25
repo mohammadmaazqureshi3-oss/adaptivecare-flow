@@ -238,3 +238,16 @@ h2.flush { margin: 0; }
 .badge-draining { background: var(--warn-bg); color: var(--warn); }
 .badge-retired { background: #eef0f3; color: var(--muted); }
 button.fit { align-self: flex-start; }
+/* WRK-02 */
+.override { flex-basis: 100%; }
+.override span { font-size: 0.8rem; color: var(--warn); }
+.ml-note { background: #eef4ff; border: 1px solid #c7d7f7; border-radius: 6px; padding: 0.35rem 0.6rem; font-size: 0.85rem; }
+/* PAT-02 */
+.beds { display: flex; flex-direction: column; gap: 0.6rem; }
+.beds form input { width: 8rem; }
+.bed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.5rem; }
+.bed { border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.5rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.bed-free { background: var(--ok-bg); border-color: #86efac; }
+.bed-reserved { background: var(--warn-bg); border-color: #fcd34d; }
+.bed-occupied { background: #e0e7ff; border-color: #a5b4fc; }
+.bed button.small { padding: 0.1rem 0.4rem; font-size: 0.75rem; align-self: flex-start; }

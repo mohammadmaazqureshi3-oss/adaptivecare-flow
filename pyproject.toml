@@ -2,8 +2,8 @@
 # dependencies; this file only configures the shared quality gates (NFR-MNT-01/02).
 
 [tool.pytest.ini_options]
-testpaths = ["packages/pathway-core/tests", "packages/care-events/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests", "services/patient/tests", "services/engine/tests", "services/worklist/tests", "services/deployer/tests", "services/simulator/tests", "tests/system"]
-pythonpath = ["packages/pathway-core/src", "packages/care-events/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer", "services/patient", "services/engine", "services/engine/tests", "services/worklist", "services/ml", "services/deployer", "services/simulator", "services/simulator/tests"]
+testpaths = ["packages/pathway-core/tests", "packages/care-events/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests", "services/patient/tests", "services/engine/tests", "services/worklist/tests", "services/deployer/tests", "services/simulator/tests", "services/ml/tests", "tests/system", "tests/scripts"]
+pythonpath = ["packages/pathway-core/src", "packages/care-events/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer", "services/patient", "services/engine", "services/engine/tests", "services/worklist", "services/ml", "services/deployer", "services/simulator", "services/simulator/tests", "services/ml/tests", "scripts"]
 addopts = "-q --import-mode=importlib"
 
 [tool.coverage.run]
@@ -37,4 +37,8 @@ exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
 module = ["pika", "pika.*"]  # pika ships without type information
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["sklearn", "sklearn.*", "shap", "shap.*", "joblib"]  # no type information shipped
 ignore_missing_imports = true

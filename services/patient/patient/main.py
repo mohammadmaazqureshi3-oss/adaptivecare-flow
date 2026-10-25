@@ -1,4 +1,4 @@
-"""patient service: patients (PAT-01); triage records and beds follow in Sprint 6 (PAT-02).
+"""patient service: patients (PAT-01) and beds (PAT-02, see ``patient.beds``).
 
 Feature IDs: C1-02. Nurses and doctors register and search patients through the
 gateway, which has already checked their role and passes their identity in
@@ -21,10 +21,16 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from patient.db import Database, PatientRow, iso, make_engine
+from patient.beds import BINDINGS, BedService, bed_out
+from patient.db import BedRow, Database, PatientRow, iso, make_engine, now
 
 MAX_AGE_YEARS = 130
 MRN = re.compile(r"^[Pp]0*(\d{1,9})$")
+
+
+class BedIn(BaseModel):
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,19}$")
+    ward: str = Field(min_length=1, max_length=40)
 
 
 class PatientIn(BaseModel):
@@ -161,6 +167,34 @@ def read(patient_id: int, s: SessionDep) -> dict[str, Any]:
     return patient_out(p)
 
 
+@router.get("/beds")
+def beds(s: SessionDep, ward: str | None = None) -> list[dict[str, Any]]:
+    """PAT-02: every bed with its status (free, reserved for a case, occupied)."""
+    q = select(BedRow).order_by(BedRow.ward, BedRow.id)
+    return [bed_out(b) for b in s.scalars(q.where(BedRow.ward == ward) if ward else q)]
+
+
+@router.post("/beds", status_code=status.HTTP_201_CREATED)
+def add_bed(body: BedIn, s: SessionDep) -> dict[str, Any]:
+    if s.get(BedRow, body.id) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a bed with this id exists")
+    bed = BedRow(id=body.id, ward=body.ward)
+    s.add(bed)
+    s.commit()
+    return bed_out(bed)
+
+
+@router.post("/beds/{bed_id}/release")
+def release_bed(bed_id: str, s: SessionDep) -> dict[str, Any]:
+    """Free a bed by hand (discharge, or a reservation no longer needed)."""
+    bed = s.get(BedRow, bed_id)
+    if bed is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "bed not found")
+    bed.status, bed.case_id, bed.wait_id, bed.patient_id, bed.updated_at = "free", "", "", "", now()
+    s.commit()
+    return bed_out(bed)
+
+
 def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:
     """Build the service; tests pass an in-memory database and, when they need events, a bus.
 
@@ -170,6 +204,8 @@ def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:
     owns_bus = bus is None
     the_bus: Bus | None = bus or (RabbitBus(os.environ["AMQP_URL"]) if os.environ.get("AMQP_URL") else None)
     relay = OutboxRelay(database.sessions, the_bus) if the_bus else None
+    if the_bus:
+        the_bus.subscribe("patient", BINDINGS, BedService(database).on_event)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

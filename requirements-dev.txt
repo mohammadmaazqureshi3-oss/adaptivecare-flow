@@ -8,6 +8,9 @@ bcrypt==5.0.0
 pika==1.4.4
 scipy==1.18.1
 scipy-stubs==1.18.1.1
+scikit-learn==1.9.1
+shap==0.54.1
+joblib==1.6.0
 pytest
 pytest-cov
 hypothesis

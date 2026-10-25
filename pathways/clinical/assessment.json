@@ -1,0 +1,50 @@
+{
+  "id": "assessment",
+  "version": 1,
+  "name": "Assessment",
+  "variables": [
+    {"name": "patient_id", "type": "string"},
+    {"name": "confirmed_urgency", "type": "int"},
+    {"name": "chief_complaint", "type": "string"},
+    {"name": "lab_abnormal", "type": "bool"},
+    {"name": "imaging_abnormal", "type": "bool"},
+    {"name": "admit", "type": "bool"},
+    {"name": "plan", "type": "string"}
+  ],
+  "nodes": [
+    {"id": "start", "type": "start", "label": "Triage completed", "trigger": "TriageCompleted",
+     "inputs": ["patient_id", "confirmed_urgency", "chief_complaint"]},
+    {"id": "tests", "type": "and_split", "label": "Tests in parallel"},
+    {"id": "labs", "type": "task", "kind": "human", "role": "nurse", "label": "Blood tests",
+     "inputs": ["patient_id", "chief_complaint"], "outputs": ["lab_abnormal"],
+     "deadline": {"minutes": 60, "escalation": [{"role": "charge_nurse", "afterMin": 15}]},
+     "duration": {"dist": "lognormal", "meanMin": 35, "sdMin": 10}},
+    {"id": "imaging", "type": "task", "kind": "human", "role": "doctor", "label": "Imaging and report",
+     "inputs": ["patient_id", "chief_complaint"], "outputs": ["imaging_abnormal"],
+     "duration": {"dist": "lognormal", "meanMin": 25, "sdMin": 8}},
+    {"id": "results", "type": "and_join", "label": "Results ready"},
+    {"id": "review", "type": "task", "kind": "human", "role": "doctor", "label": "Doctor review",
+     "inputs": ["patient_id", "confirmed_urgency", "lab_abnormal", "imaging_abnormal"],
+     "outputs": ["admit", "plan"],
+     "deadline": {"minutes": 30, "escalation": []},
+     "duration": {"dist": "lognormal", "meanMin": 12, "sdMin": 4}},
+    {"id": "admit_decision", "type": "xor_split", "label": "Admit?"},
+    {"id": "end_admit", "type": "end", "label": "Admission requested", "emit": "AdmissionRequested"},
+    {"id": "discharge", "type": "task", "kind": "human", "role": "nurse", "label": "Discharge with advice",
+     "inputs": ["patient_id", "plan"], "outputs": [],
+     "duration": {"dist": "triangular", "minMin": 3, "modeMin": 5, "maxMin": 10}},
+    {"id": "end_home", "type": "end", "label": "Discharged"}
+  ],
+  "edges": [
+    {"from": "start", "to": "tests"},
+    {"from": "tests", "to": "labs"},
+    {"from": "tests", "to": "imaging"},
+    {"from": "labs", "to": "results"},
+    {"from": "imaging", "to": "results"},
+    {"from": "results", "to": "review"},
+    {"from": "review", "to": "admit_decision"},
+    {"from": "admit_decision", "to": "end_admit", "condition": "admit", "prob": 0.3},
+    {"from": "admit_decision", "to": "discharge", "default": true, "prob": 0.7},
+    {"from": "discharge", "to": "end_home"}
+  ]
+}

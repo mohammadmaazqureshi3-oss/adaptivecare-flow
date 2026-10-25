@@ -21,13 +21,13 @@ DEMO_USERS = [
     ("Mia Manager", "manager@adaptivecare.test", "manager-demo-1", "manager"),
     ("Cara Charge", "charge@adaptivecare.test", "charge-demo-1", "charge_nurse"),
 ]
-PATHWAYS = [("triage", "Emergency triage"), ("imaging_deadlock", "Imaging (has a deadlock)")]
-# Synthetic patients only (NFR-EXT-01).
-PATIENTS = [
-    ("Ada Lovelace", "1985-12-10", "female", "walk_in", "chest pain"),
-    ("Alan Turing", "1952-06-23", "male", "ambulance", "shortness of breath"),
-    ("Grace Hopper", "1946-12-09", "female", "referral", "fall, wrist pain"),
+# Patients are not seeded: registering one starts a real Triage case (register them in the app).
+CLINICAL = [
+    ("triage", "Emergency triage"),
+    ("assessment", "Assessment"),
+    ("visit", "Ward visit and admission"),
 ]
+BEDS = [(f"W1-{i:02d}", "W1") for i in range(1, 7)] + [(f"W2-{i:02d}", "W2") for i in range(1, 5)]
 
 
 def env(name: str) -> str:
@@ -43,27 +43,40 @@ def token(c: httpx.Client, email: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def publish_triage(c: httpx.Client, designer: dict[str, str]) -> None:
-    """Verify and publish Triage if its latest version is a draft, so an engine can run it."""
-    latest = c.get("/pathways/triage/versions", headers=designer).json()[-1]
-    if latest["status"] == "published":
-        print(f"pathway triage: v{latest['number']} already published")
-        return
-    report = c.post(f"/versions/{latest['id']}/verify", headers=designer).json()["report"]
-    if report["status"] != "SAFE":
-        print(f"pathway triage: not published, Verify says {report['status']}")
-        return
-    c.post(f"/versions/{latest['id']}/publish", headers=designer).raise_for_status()
-    print(f"pathway triage: v{latest['number']} verified SAFE and published")
+def install_clinical(c: httpx.Client, designer: dict[str, str], admin: dict[str, str]) -> None:
+    """CLN-01..03 the way a team would: a new version of each pathway, verified, published,
+    deployed; older running versions are undeployed (drained) once the new one runs."""
+    for pid, title in CLINICAL:
+        model = json.loads((ROOT / "pathways" / "clinical" / f"{pid}.json").read_text())
+        if c.post("/pathways", json={"id": pid, "name": title}, headers=designer).status_code == 201:
+            print(f"pathway {pid}: created")
+        versions = c.get(f"/pathways/{pid}/versions", headers=designer).json()
+        latest = versions[-1]
+        if latest["status"] != "draft" and latest["status"] != "verified":
+            current = c.get(f"/versions/{latest['id']}", headers=designer).json()["model"]
+            if current.get("nodes") == model["nodes"] and current.get("edges") == model["edges"]:
+                state = f"v{latest['number']} already holds the clinical model ({latest['status']})"
+                print(f"pathway {pid}: {state}")
+                _deploy(c, admin, pid, latest)
+                continue
+            latest = c.post(f"/pathways/{pid}/versions", headers=designer).json()
+        c.put(f"/versions/{latest['id']}", json={"model": model}, headers=designer).raise_for_status()
+        report = c.post(f"/versions/{latest['id']}/verify", headers=designer).json()["report"]
+        if report["status"] != "SAFE":
+            print(f"pathway {pid}: Verify says {report['status']}; not published")
+            continue
+        c.post(f"/versions/{latest['id']}/publish", headers=designer).raise_for_status()
+        print(f"pathway {pid}: v{latest['number']} verified SAFE and published")
+        _deploy(c, admin, pid, latest)
 
 
-def deploy_triage(c: httpx.Client, admin: dict[str, str]) -> None:
-    """Deploy the latest published Triage version (DEP-01), so registrations start cases."""
-    for v in reversed(c.get("/pathways/triage/versions", headers=admin).json()):
-        if v["status"] in ("published", "deployed"):
-            r = c.post(f"/versions/{v['id']}/deploy", headers=admin, timeout=60)
-            print(f"pathway triage: v{v['number']} {r.json().get('status', r.json().get('detail'))}")
-            return
+def _deploy(c: httpx.Client, admin: dict[str, str], pid: str, version: dict) -> None:  # type: ignore[type-arg]
+    r = c.post(f"/versions/{version['id']}/deploy", headers=admin, timeout=60).json()
+    print(f"pathway {pid}: v{version['number']} {r.get('status', r.get('detail'))}")
+    for d in c.get("/deployments", params={"pathway": pid}, headers=admin).json():
+        if d["status"] == "running" and d["version_id"] != version["id"]:
+            undeployed = c.delete(f"/deployments/{d['id']}", headers=admin).json()
+            print(f"pathway {pid}: v{d['version']} undeployed ({undeployed['status']})")
 
 
 def main() -> None:
@@ -77,28 +90,19 @@ def main() -> None:
             )
             print(f"user {email:32} {role:9} {'created' if r.status_code == 201 else r.json()['detail']}")
         designer = token(c, DEMO_USERS[0][1], DEMO_USERS[0][2])
-        for pid, title in PATHWAYS:
-            r = c.post("/pathways", json={"id": pid, "name": title}, headers=designer)
-            if r.status_code != 201:
-                print(f"pathway {pid}: {r.json()['detail']}")
-                continue
-            vid = r.json()["latest_version"]["id"]
-            model = json.loads((ROOT / "pathways" / f"{pid}.json").read_text())
-            c.put(f"/versions/{vid}", json={"model": model}, headers=designer).raise_for_status()
-            print(f"pathway {pid}: loaded as draft v1")
-        publish_triage(c, designer)
-        deploy_triage(c, admin)
+        r = c.post(
+            "/pathways", json={"id": "imaging_deadlock", "name": "Imaging (has a deadlock)"}, headers=designer
+        )
+        if r.status_code == 201:
+            model = json.loads((ROOT / "pathways" / "imaging_deadlock.json").read_text())
+            c.put(f"/versions/{r.json()['latest_version']['id']}", json={"model": model}, headers=designer)
+            print("pathway imaging_deadlock: loaded as draft v1 (the Verifier's worked example)")
+        install_clinical(c, designer, admin)
         nurse = token(c, DEMO_USERS[1][1], DEMO_USERS[1][2])
-        for name, dob, sex, mode, complaint in PATIENTS:
-            body = {
-                "name": name,
-                "date_of_birth": dob,
-                "sex": sex,
-                "arrival_mode": mode,
-                "chief_complaint": complaint,
-            }
-            r = c.post("/patients", json=body, headers=nurse)
-            print(f"patient {name:14} {r.json()['mrn'] if r.status_code == 201 else 'already registered'}")
+        added = sum(
+            c.post("/beds", json={"id": b, "ward": w}, headers=nurse).status_code == 201 for b, w in BEDS
+        )
+        print(f"beds: {added} added")
 
 
 if __name__ == "__main__":

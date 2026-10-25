@@ -1,0 +1,32 @@
+{
+  "id": "visit",
+  "version": 1,
+  "name": "Ward visit and admission",
+  "variables": [
+    {"name": "patient_id", "type": "string"},
+    {"name": "plan", "type": "string"},
+    {"name": "bed_id", "type": "string"}
+  ],
+  "nodes": [
+    {"id": "start", "type": "start", "label": "Admission requested", "trigger": "AdmissionRequested",
+     "inputs": ["patient_id", "plan"]},
+    {"id": "reserve_bed", "type": "task", "kind": "service", "service": "BedService", "label": "Reserve a bed",
+     "inputs": ["patient_id"], "outputs": ["bed_id"], "undo": "ReleaseBed",
+     "retry": {"max": 3, "baseDelayS": 30},
+     "duration": {"dist": "fixed", "meanMin": 0.5}},
+    {"id": "handover", "type": "task", "kind": "human", "role": "nurse", "label": "Prepare ward handover",
+     "inputs": ["patient_id", "bed_id", "plan"], "outputs": [],
+     "duration": {"dist": "lognormal", "meanMin": 10, "sdMin": 3}},
+    {"id": "transfer", "type": "task", "kind": "human", "role": "nurse", "label": "Transfer to ward",
+     "inputs": ["patient_id", "bed_id"], "outputs": [],
+     "deadline": {"minutes": 60, "escalation": [{"role": "charge_nurse", "afterMin": 15}]},
+     "duration": {"dist": "lognormal", "meanMin": 15, "sdMin": 5}},
+    {"id": "end", "type": "end", "label": "Admitted", "emit": "PatientAdmitted"}
+  ],
+  "edges": [
+    {"from": "start", "to": "reserve_bed"},
+    {"from": "reserve_bed", "to": "handover"},
+    {"from": "handover", "to": "transfer"},
+    {"from": "transfer", "to": "end"}
+  ]
+}

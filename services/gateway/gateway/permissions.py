@@ -64,11 +64,16 @@ RULES: tuple[Rule, ...] = (
     Rule("GET", "/patients", "patient", CLINICAL),
     Rule("POST", "/patients", "patient", CLINICAL),
     Rule("GET", "/patients/{id}", "patient", CLINICAL),
+    Rule("GET", "/beds", "patient", CLINICAL),
+    Rule("POST", "/beds", "patient", CLINICAL),
+    Rule("POST", "/beds/{id}/release", "patient", CLINICAL),
     # worklist: tasks for my role (WRK-01)
     Rule("GET", "/tasks", "worklist", CLINICAL),
     Rule("POST", "/tasks/{id}/claim", "worklist", CLINICAL),
     Rule("POST", "/tasks/{id}/release", "worklist", CLINICAL),
     Rule("POST", "/tasks/{id}/complete", "worklist", CLINICAL),
+    Rule("POST", "/tasks/{id}/fail", "worklist", CLINICAL),
+    Rule("GET", "/overrides", "worklist", frozenset({"manager", "admin"})),
     Rule("GET", "/notifications", "worklist", CLINICAL | {"manager", "admin"}),
 )
 

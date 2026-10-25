@@ -55,6 +55,16 @@ a reply must carry the same value, and only the token waiting on exactly that id
 
 `TaskRequested` also carries `due_at` and the envelope's `attempt` (retries, ENG-07).
 
+### Sprint 6 events (decision 0006)
+| Event | Producer → consumer | Payload |
+|-------|---------------------|---------|
+| `<emit>` of an End node, e.g. `TriageCompleted`, `AdmissionRequested`, `PatientAdmitted` | engine → engines whose trigger matches; patient (`PatientAdmitted`) | the case data + `from_case`, `from_pathway` |
+| `TaskRequested.BedService`, `CompensateRequested.BedService`, `CancelRequested.BedService` | engine → patient | reserve / release a bed |
+| `TaskCompleted` from ml | ml → engine | declared outputs + `probabilities`, `reasons`, `model_version` |
+
+`TaskRequested` carries `override` (`{suggested, decided}`) when the task has an override check;
+a `TaskCompleted` from the worklist then carries `override` (`{suggested, decided, reason}`) if changed.
+
 ### `PatientRegistered` payload
 `patient_id` (record number), `age`, `sex`, `arrival_mode`, `chief_complaint`: no name or birth date.
 
@@ -102,6 +112,9 @@ All user requests go through the gateway, which checks the token and the role
 | `GET /tasks`, `POST /tasks/{id}/claim`, `/release`, `/complete` | nurse, doctor; tasks of the caller's role (WRK-01) |
 
 | `GET /notifications` | clinical roles, manager, admin: alerts for the caller's role |
+| `POST /tasks/{id}/fail` | clinical roles: report a problem (`{reason}`) |
+| `GET /overrides` | manager, admin: WRK-02 audit of changed suggestions |
+| `GET/POST /beds`, `POST /beds/{id}/release` | clinical roles: beds (PAT-02) |
 | `POST /versions/{id}/deploy`, `GET /deployments` | deploy: admin only (NFR-SEC-03); list: designer, manager, admin |
 
 | `DELETE /deployments/{id}` | admin: undeploy, drain then retire (DEP-02) |

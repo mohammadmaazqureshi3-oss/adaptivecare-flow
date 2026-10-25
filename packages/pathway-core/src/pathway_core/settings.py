@@ -7,6 +7,7 @@ the typed accessors give the Engine and the Simulator checked values to run with
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
@@ -19,6 +20,7 @@ DISTRIBUTIONS = {
     "triangular": ("minMin", "modeMin", "maxMin"),
 }
 MAX_RETRIES = 10
+EVENT_NAME = re.compile(r"^[A-Z][A-Za-z0-9]{2,63}$")
 MAX_RETRY_DELAY_S = 3600
 
 
@@ -62,6 +64,8 @@ def settings_issues(node: Node) -> list[str]:
     if node.type == "timer":
         ok = _number(node.minutes) and node.minutes is not None and node.minutes > 0
         return [] if ok else ["A timer needs a wait of more than 0 minutes"]
+    if node.type == "end":
+        return _emit_issues(node.settings.get("emit"))
     if node.type != "task":
         return []
     s = node.settings
@@ -71,7 +75,32 @@ def settings_issues(node: Node) -> list[str]:
         *_retry_issues(node, s.get("retry")),
         *_undo_issues(s.get("undo")),
         *_duration_issues(s.get("duration")),
+        *_override_issues(node, s.get("override")),
     ]
+
+
+def _emit_issues(emit: Any) -> list[str]:
+    """An End may announce an event (e.g. TriageCompleted) that starts another pathway."""
+    if emit is None or (isinstance(emit, str) and EVENT_NAME.match(emit)):
+        return []
+    return [
+        "An emitted event needs a name like TriageCompleted (letters and digits, starting with a capital)"
+    ]
+
+
+def _override_issues(node: Node, o: Any) -> list[str]:
+    """WRK-02: a person may change a suggestion (e.g. the ML urgency) only with a reason."""
+    if o is None:
+        return []
+    if (
+        not isinstance(o, dict)
+        or o.get("suggested") not in node.inputs
+        or o.get("decided") not in node.outputs
+    ):
+        return [
+            "An override check needs a suggested value among the inputs and a decided value among the outputs"
+        ]
+    return []
 
 
 def _who_issues(node: Node) -> list[str]:
@@ -153,6 +182,23 @@ def retry(node: Node) -> Retry | None:
 def undo(node: Node) -> str | None:
     u = node.settings.get("undo")
     return str(u) if u else None
+
+
+def emit(node: Node) -> str | None:
+    """The event an End announces when the case finishes there, if any."""
+    e = node.settings.get("emit")
+    return str(e) if e else None
+
+
+@dataclass(frozen=True)
+class Override:
+    suggested: str  # an input, e.g. urgency (the model's suggestion)
+    decided: str  # an output, e.g. confirmed_urgency (the person's decision)
+
+
+def override(node: Node) -> Override | None:
+    o = node.settings.get("override")
+    return None if o is None else Override(str(o["suggested"]), str(o["decided"]))
 
 
 def duration(node: Node) -> Duration | None:

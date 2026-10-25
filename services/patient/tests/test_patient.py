@@ -6,9 +6,12 @@ from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from care_events import Event, OutboxRow
 from fastapi.testclient import TestClient
+from patient.beds import BedService
 from patient.db import Database, make_engine
 from patient.main import age, create_app
+from sqlalchemy import select
 
 AS_NURSE = {"x-user-email": "nadia@example.org"}
 ADA = {"name": "Ada  Lovelace ", "date_of_birth": "1985-12-10", "sex": "female", "arrival_mode": "walk_in"}
@@ -107,9 +110,6 @@ def test_age_boundaries(dob: date, today: date, expected: int) -> None:
 
 
 def test_eng01_registration_queues_patient_registered_without_the_name(client: TestClient) -> None:
-    from care_events import Event, OutboxRow
-    from sqlalchemy import select
-
     p = register(client, chief_complaint="chest pain")
     db = client.app.state.db  # type: ignore[attr-defined]
     with db.sessions() as s:
@@ -124,3 +124,76 @@ def test_eng01_registration_queues_patient_registered_without_the_name(client: T
         "chief_complaint": "chest pain",
     }
     assert "Lovelace" not in row.event_json and "1985" not in row.event_json
+
+
+# ---- PAT-02: beds -------------------------------------------------------------------------
+
+
+def bed_request(token: str = "t0@bed#1", case: str = "visit-1", event_id: str = "req-bed-1") -> Event:
+    return Event(
+        "TaskRequested",
+        {
+            "node": "reserve_bed",
+            "inputs": {"patient_id": "P000001"},
+            "patient_id": "P000001",
+            "outputs": [{"name": "bed_id", "type": "string"}],
+        },
+        event_id=event_id,
+        case_id=case,
+        token_id=token,
+        pathway="visit",
+        version=1,
+        target="BedService",
+    )
+
+
+def replies(client: TestClient) -> list[Event]:
+    with client.app.state.db.sessions() as s:  # type: ignore[attr-defined]
+        return [Event.from_json(r.event_json) for r in s.scalars(select(OutboxRow).order_by(OutboxRow.id))]
+
+
+def service(client: TestClient) -> BedService:
+    return BedService(client.app.state.db)  # type: ignore[attr-defined]
+
+
+def test_pat02_reserve_is_idempotent_and_takes_a_free_bed(client: TestClient) -> None:
+    for b in ("W1-01", "W1-02"):
+        assert client.post("/beds", json={"id": b, "ward": "W1"}).status_code == 201
+    assert client.post("/beds", json={"id": "W1-01", "ward": "W1"}).status_code == 409
+    svc = service(client)
+    svc.on_event(bed_request())
+    svc.on_event(bed_request(event_id="req-bed-1-again"))  # a retried request: same bed
+    done = [e for e in replies(client) if e.type == "TaskCompleted"]
+    assert [e.payload["outputs"] for e in done] == [{"bed_id": "W1-01"}, {"bed_id": "W1-01"}]
+    beds = {b["id"]: b for b in client.get("/beds").json()}
+    assert beds["W1-01"]["status"] == "reserved" and beds["W1-01"]["patient_id"] == "P000001"
+    assert beds["W1-02"]["status"] == "free"
+
+
+def test_pat02_no_free_bed_is_a_temporary_failure(client: TestClient) -> None:
+    service(client).on_event(bed_request())
+    [reply] = replies(client)
+    assert reply.type == "TaskFailed" and reply.payload["temporary"] is True
+
+
+def test_pat02_release_bed_undo_and_admission(client: TestClient) -> None:
+    client.post("/beds", json={"id": "W2-01", "ward": "W2"})
+    svc = service(client)
+    svc.on_event(bed_request())
+    undo = Event(
+        "CompensateRequested",
+        {"action": "ReleaseBed"},
+        event_id="undo-1",
+        case_id="visit-1",
+        token_id="undo:reserve_bed#5",
+        pathway="visit",
+        version=1,
+        target="BedService",
+    )
+    svc.on_event(undo)
+    assert replies(client)[-1].type == "Compensated" and replies(client)[-1].payload["ok"] is True
+    assert client.get("/beds").json()[0]["status"] == "free"
+    svc.on_event(bed_request(case="visit-2", token="t0@bed#2", event_id="req-bed-2"))
+    svc.on_event(Event("PatientAdmitted", {"bed_id": "W2-01", "patient_id": "P000001"}, event_id="adm-1"))
+    assert client.get("/beds").json()[0]["status"] == "occupied"
+    assert client.post("/beds/W2-01/release").json()["status"] == "free"

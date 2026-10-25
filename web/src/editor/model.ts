@@ -51,6 +51,8 @@ interface KnownNodeFields {
   retry?: { max: number; baseDelayS: number };
   undo?: string;
   duration?: Duration;
+  override?: { suggested: string; decided: string };
+  emit?: string;
   x?: number;
   y?: number;
 }

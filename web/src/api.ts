@@ -93,6 +93,15 @@ export interface PatientIn {
   confirm_duplicate?: boolean;
 }
 
+export interface Bed {
+  id: string;
+  ward: string;
+  status: "free" | "reserved" | "occupied";
+  patient_id: string;
+  case_id: string;
+  updated_at: string;
+}
+
 export interface TargetIn {
   task: string;
   max_wait_min: number;
@@ -184,7 +193,11 @@ export interface Task {
   inputs: Record<string, unknown>;
   outputs: { name: string; type: "int" | "float" | "bool" | "string" }[];
   deadline_min: number | null;
-  status: "open" | "claimed" | "done" | "cancelled";
+  due_at: string | null;
+  kind: "task" | "undo";
+  level: number;
+  override: { suggested: string; decided: string } | null;
+  status: "open" | "claimed" | "done" | "cancelled" | "failed";
   assignee: string | null;
   result: Record<string, unknown> | null;
   created_at: string;
@@ -325,9 +338,14 @@ export const api = {
   undeploy: (deploymentId: number) => request<Deployment>("DELETE", `/deployments/${deploymentId}`),
   deployments: (pathway: string) => request<Deployment[]>("GET", `/deployments?pathway=${encodeURIComponent(pathway)}`),
 
+  beds: () => request<Bed[]>("GET", "/beds"),
+  addBed: (id: string, ward: string) => request<Bed>("POST", "/beds", { id, ward }),
+  releaseBed: (id: string) => request<Bed>("POST", `/beds/${encodeURIComponent(id)}/release`),
+
   tasks: (includeDone = false) => request<Task[]>("GET", `/tasks${includeDone ? "?include_done=true" : ""}`),
   claimTask: (id: number) => request<Task>("POST", `/tasks/${id}/claim`),
   releaseTask: (id: number) => request<Task>("POST", `/tasks/${id}/release`),
-  completeTask: (id: number, outputs: Record<string, unknown>) =>
-    request<Task>("POST", `/tasks/${id}/complete`, { outputs }),
+  completeTask: (id: number, outputs: Record<string, unknown>, reason?: string) =>
+    request<Task>("POST", `/tasks/${id}/complete`, { outputs, reason }),
+  failTask: (id: number, reason: string) => request<Task>("POST", `/tasks/${id}/fail`, { reason }),
 };
