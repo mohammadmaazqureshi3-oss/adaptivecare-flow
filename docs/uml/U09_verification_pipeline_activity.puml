@@ -1,0 +1,28 @@
+@startuml U09_verification_pipeline_activity
+!include style.iuml
+title U09 — Verification pipeline (activity, Sprint 2; replaces 01, state search instead of pattern matching)
+
+start
+:Parse the pathway JSON (pathway-core model);
+:Structural checks:\nreferences, one Start, ≥1 End, node shapes,\nBFS from Start, reverse BFS from Ends;
+if (fatal structure error?) then (yes)
+  :Report structure errors;
+else (no)
+  :Explore every reachable marking (U10);
+  if (control flow sound and search complete?) then (yes)
+    :Data-flow fixed point (U11):\nmissing data;
+  else (no)
+  endif
+  :Parse and type-check every branch condition;
+endif
+:Check task settings (DES-04):\nrole/service, deadline, escalation, retries,\nfallback, undo, duration, timer;
+:Deduplicate: one error per type, nodes and message,\nkeeping the shortest counterexample;
+if (any error?) then (yes)
+  :UNSAFE;
+elseif (state limit reached?) then (yes)
+  :TOO_LARGE;
+else (no)
+  :SAFE;
+endif
+stop
+@enduml

@@ -3,6 +3,7 @@ import { api, setLoggedOutHandler, type User } from "./api";
 import { Editor } from "./pages/Editor";
 import { Login } from "./pages/Login";
 import { PathwayList } from "./pages/PathwayList";
+import { Patients } from "./pages/Patients";
 import { Users } from "./pages/Users";
 
 // Hash routes keep the app a static bundle: #/pathways, #/pathways/<id>, #/users.
@@ -18,6 +19,7 @@ function useHashRoute(): [string[], (path: string) => void] {
 }
 
 const PATHWAY_ROLES = ["designer", "manager", "admin"];
+const CLINICAL_ROLES = ["nurse", "doctor"];
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -37,7 +39,8 @@ export function App() {
   if (!user) return <Login onLogin={setUser} />;
 
   const canSeePathways = PATHWAY_ROLES.includes(user.role);
-  const [section = canSeePathways ? "pathways" : user.role === "admin" ? "users" : "home", id] = route;
+  const clinical = CLINICAL_ROLES.includes(user.role);
+  const [section = canSeePathways ? "pathways" : clinical ? "patients" : "home", id] = route;
 
   return (
     <div className="app">
@@ -47,6 +50,11 @@ export function App() {
           {canSeePathways && (
             <a className={section === "pathways" ? "active" : ""} href="#/pathways">
               Pathways
+            </a>
+          )}
+          {clinical && (
+            <a className={section === "patients" ? "active" : ""} href="#/patients">
+              Patients
             </a>
           )}
           {user.role === "admin" && (
@@ -73,12 +81,13 @@ export function App() {
         {section === "pathways" && canSeePathways && !id && <PathwayList user={user} onOpen={(pid) => go(`/pathways/${pid}`)} />}
         {section === "pathways" && canSeePathways && id && <Editor key={id} pathwayId={id} user={user} />}
         {section === "users" && user.role === "admin" && <Users me={user} />}
+        {section === "patients" && clinical && <Patients />}
         {section === "home" && (
           <div className="centered">
             <div className="card narrow">
               <h2>Welcome, {user.name}</h2>
               <p className="muted">
-                Worklists and patient registration for {user.role}s arrive in Sprints 2–3 (PAT-01, WRK-01).
+                Dashboards for {user.role}s arrive in Sprint 7 (MON-02).
               </p>
             </div>
           </div>

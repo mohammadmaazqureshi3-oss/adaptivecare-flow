@@ -1,0 +1,24 @@
+@startuml U07_version_lifecycle_state
+!include style.iuml
+title U07 — Pathway version lifecycle (state machine, Sprint 2)
+
+[*] --> Draft : POST /pathways\nor New draft (copy of latest)
+Draft --> Draft : Save (PUT /versions/{id})
+Draft --> Verified : Verify [report = SAFE]
+Draft --> Draft : Verify [UNSAFE or TOO_LARGE]\n/ store report, Publish stays blocked
+Verified --> Draft : Save (any edit)\n/ clear report
+Verified --> Published : Publish (designer)
+state Published : immutable: PUT and Publish → 409
+Published --> Deployed : Deploy (admin, Sprint 4)
+Deployed --> Draining : Undeploy\n/ no new cases
+Draining --> Retired : last case finished\n/ stop engine container
+Retired --> [*]
+note right of Verified
+  Verified always refers to this exact model:
+  any edit returns the version to Draft (VER-01).
+end note
+note bottom of Published
+  Implemented in Sprints 1–2: Draft, Verified, Published.
+  Deployed, Draining, Retired arrive with the deployer (DEP-01/02).
+end note
+@enduml

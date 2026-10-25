@@ -42,7 +42,7 @@ class _Builder:
         nid = f"{ntype}{next(self.ids)}"
         doc: dict[str, Any] = {"id": nid, "type": ntype}
         if ntype == "task":
-            doc["kind"] = "human"
+            doc["kind"], doc["role"] = "human", "nurse"
         self.nodes.append(doc)
         return nid
 

@@ -99,7 +99,6 @@ export const NODE_LABELS: Record<NodeType, string> = {
   end: "End",
 };
 
-const FALLBACK_PREFIX = "fallback:";
 
 export function edgeLabel(d: EdgeData | undefined): string | undefined {
   if (!d) return undefined;
@@ -163,7 +162,7 @@ export function fallbackEdges(nodes: FlowNode[]): FlowEdge[] {
   return nodes
     .filter((n) => n.type === "task" && n.data.fallback)
     .map((n) => ({
-      id: FALLBACK_PREFIX + n.id,
+      id: fallbackEdgeId(n.id, n.data.fallback as string),
       source: n.id,
       target: n.data.fallback as string,
       data: { fallback: true },
@@ -175,8 +174,48 @@ export function fallbackEdges(nodes: FlowNode[]): FlowEdge[] {
     }));
 }
 
+/** The same id pathway-core gives a fallback arrow, so Verifier paths can be drawn on it. */
+export function fallbackEdgeId(task: string, target: string): string {
+  return `${task}~>${target}`;
+}
+
 export function isFallbackEdge(e: FlowEdge): boolean {
-  return e.id.startsWith(FALLBACK_PREFIX);
+  return e.data?.fallback === true;
+}
+
+// ---- counterexample replay (NFR-USE-01) ------------------------------------------
+
+export interface MoveLike {
+  node: string;
+  consumed: string[];
+  produced: string[];
+}
+
+export interface ReplayStep {
+  /** Tokens per arrow id after this step. */
+  tokens: Record<string, number>;
+  /** The node that fired to reach this step; null for the initial marking. */
+  firing: string | null;
+}
+
+/**
+ * Re-run a Verifier counterexample with the token rules: step 0 is the initial
+ * marking (one token after Start), step k is the marking after the k-th move.
+ */
+export function replay(model: PathwayModel, path: MoveLike[]): ReplayStep[] {
+  const ids = model.edges.map((e, i) => e.id || `${e.from}->${e.to}#${i}`);
+  const tokens: Record<string, number> = {};
+  model.edges.forEach((e, i) => {
+    const from = model.nodes.find((n) => n.id === e.from);
+    if (from?.type === "start") tokens[ids[i]] = (tokens[ids[i]] ?? 0) + 1;
+  });
+  const steps: ReplayStep[] = [{ tokens: { ...tokens }, firing: null }];
+  for (const move of path) {
+    for (const id of move.consumed) tokens[id] = (tokens[id] ?? 0) - 1;
+    for (const id of move.produced) tokens[id] = (tokens[id] ?? 0) + 1;
+    steps.push({ tokens: Object.fromEntries(Object.entries(tokens).filter(([, n]) => n > 0)), firing: move.node });
+  }
+  return steps;
 }
 
 export function fromFlow(

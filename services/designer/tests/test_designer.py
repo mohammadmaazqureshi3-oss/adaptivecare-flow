@@ -7,6 +7,7 @@ so these tests also check that the designer and verifier agree on the model.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +27,10 @@ def in_process_verifier(model: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app(Database(make_engine("sqlite://")), verify=in_process_verifier))
+def client() -> Iterator[TestClient]:
+    db = Database(make_engine("sqlite://"))
+    yield TestClient(create_app(db, verify=in_process_verifier))
+    db.engine.dispose()
 
 
 def load(name: str) -> dict[str, Any]:
@@ -132,3 +135,21 @@ def test_des03_condition_check_while_typing(
     assert body["ok"] is ok
     if kind:
         assert body["errors"][0]["kind"] == kind and "pos" in body["errors"][0]
+
+
+def test_des04_task_policies_are_saved_and_checked_before_publish(client: TestClient) -> None:
+    vid = new_pathway(client)["latest_version"]["id"]
+    model = load("triage")
+    vitals = next(n for n in model["nodes"] if n["id"] == "vitals")
+    vitals["deadline"] = {"minutes": 10, "escalation": [{"role": "charge_nurse", "afterMin": 5}]}
+    vitals["undo"] = "CancelVitals"
+    client.put(f"/versions/{vid}", json={"model": model})
+    saved = next(n for n in client.get(f"/versions/{vid}").json()["model"]["nodes"] if n["id"] == "vitals")
+    assert saved["undo"] == "CancelVitals" and saved["deadline"]["escalation"][0]["role"] == "charge_nurse"
+    assert client.post(f"/versions/{vid}/verify").json()["status"] == "verified"
+
+    vitals["deadline"]["escalation"][0]["afterMin"] = 0  # a draft may be saved half-finished...
+    assert client.put(f"/versions/{vid}", json={"model": model}).status_code == 200
+    v = client.post(f"/versions/{vid}/verify").json()  # ...but not published
+    assert v["status"] == "draft" and [e["type"] for e in v["report"]["errors"]] == ["settings"]
+    assert client.post(f"/versions/{vid}/publish").status_code == 409

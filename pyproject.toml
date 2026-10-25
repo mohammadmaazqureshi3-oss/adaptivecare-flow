@@ -2,13 +2,13 @@
 # dependencies; this file only configures the shared quality gates (NFR-MNT-01/02).
 
 [tool.pytest.ini_options]
-testpaths = ["packages/pathway-core/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests"]
-pythonpath = ["packages/pathway-core/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer"]
+testpaths = ["packages/pathway-core/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests", "services/patient/tests"]
+pythonpath = ["packages/pathway-core/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer", "services/patient"]
 addopts = "-q --import-mode=importlib"
 
 [tool.coverage.run]
 branch = true
-source = ["pathway_core", "verifier", "auth", "gateway", "designer"]
+source = ["pathway_core", "verifier", "auth", "gateway", "designer", "patient"]
 
 [tool.coverage.report]
 fail_under = 80
@@ -31,6 +31,6 @@ max-complexity = 10
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = "packages/pathway-core/src:services/verifier:services/auth:services/gateway:services/designer"
+mypy_path = "packages/pathway-core/src:services/verifier:services/auth:services/gateway:services/designer:services/patient"
 explicit_package_bases = true
 exclude = ["tests/"]

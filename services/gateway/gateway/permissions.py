@@ -16,6 +16,7 @@ ADMIN = frozenset({"admin"})
 DESIGNER = frozenset({"designer"})
 # Managers read pathways to plan staffing; admins read published versions to deploy them (Sprint 4).
 PATHWAY_READERS = frozenset({"designer", "manager", "admin"})
+CLINICAL = frozenset({"nurse", "doctor"})
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,10 @@ RULES: tuple[Rule, ...] = (
     Rule("POST", "/versions/{id}/verify", "designer", DESIGNER),
     Rule("POST", "/versions/{id}/publish", "designer", DESIGNER),
     Rule("POST", "/conditions/check", "designer", DESIGNER),
+    # patient: register and search (PAT-01)
+    Rule("GET", "/patients", "patient", CLINICAL),
+    Rule("POST", "/patients", "patient", CLINICAL),
+    Rule("GET", "/patients/{id}", "patient", CLINICAL),
 )
 
 _COMPILED = [(r, r.regex) for r in RULES]

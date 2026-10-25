@@ -1,0 +1,33 @@
+@startuml U11_dataflow_fixed_point_activity
+!include style.iuml
+title U11 — Data-flow fixed point (activity, Sprint 2; from 02, now with fallback arrows)
+
+start
+:READS[n] := task inputs, plus every name in a decision's conditions;\nWRITES[n] := task outputs (Start: its input variables);
+:IN[n] := OUT[n] := ALL_VARS for every reachable node\n(top of the lattice);
+repeat
+  :changed := false;
+  :Visit reachable nodes in reverse post-order;
+  :For each incoming arrow e from p:\n  value(e) := IN[p] if e is a fallback arrow\n  (the task failed, its outputs are not set)\n  else OUT[p];
+  if (n is a parallel join?) then (yes)
+    :newIn := ∪ value(e)\n(all branches ran);
+  elseif (n is Start?) then (yes)
+    :newIn := ∅;
+  else (no)
+    :newIn := ∩ value(e)\n(only one path is guaranteed);
+  endif
+  :newOut := newIn ∪ WRITES[n];
+  if (newIn ≠ IN[n] or newOut ≠ OUT[n]?) then (yes)
+    :store; changed := true;
+  endif
+repeat while (changed?) is (yes)
+-> no: fixed point;
+:For each reachable n: READS[n] − IN[n] ≠ ∅ → MISSING DATA;
+stop
+note right
+  Ends: sets only shrink, finitely many variables.
+  Cost ≤ nodes × arrows × variables.
+  Runs only when the control flow is sound
+  (union at a join assumes it).
+end note
+@enduml

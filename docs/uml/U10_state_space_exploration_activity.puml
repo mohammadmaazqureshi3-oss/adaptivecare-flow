@@ -1,0 +1,44 @@
+@startuml U10_state_space_exploration_activity
+!include style.iuml
+title U10 — State-space exploration loop (activity, Sprint 2)
+
+start
+:m0 := one token after Start;\nparent[m0] := none; queue := [m0];
+while (queue not empty?) is (yes)
+  :m := queue.popleft()  (breadth-first);
+  if (some arrow holds > 1 token?) then (yes)
+    :mark m unsafe; do not expand\n(decision 0001);
+  else (no)
+    :moves := enabled_moves(m)\n(token rules; a decision gives one move per branch);
+    if (no moves and m not complete?) then (yes)
+      :report DEADLOCK with path_to(m);
+    endif
+    while (for each move → m2) is (next)
+      :record node as fired;
+      if (m2 unsafe?) then (yes)
+        :report DUPLICATE WORK;
+      endif
+      if (an End fired and tokens remain?) then (yes)
+        :report UNFINISHED CASE;
+      endif
+      if (m2 new?) then (yes)
+        if (states ≥ limit?) then (yes)
+          :TOO_LARGE;
+          stop
+        endif
+        :parent[m2] := (m, move); queue.append(m2);
+      endif
+    endwhile
+  endif
+endwhile
+:can_finish := markings that reach a completed or unsafe one\n(backward search);
+:report CANNOT FINISH at each point of no return\nnot explained by a deadlock;
+if (no path was cut?) then (yes)
+  :report DEAD STEP for every node never fired;
+endif
+stop
+note right
+  BFS ⇒ the first path found to a bad state is the shortest.
+  Markings are tuples: membership test in O(1).
+end note
+@enduml

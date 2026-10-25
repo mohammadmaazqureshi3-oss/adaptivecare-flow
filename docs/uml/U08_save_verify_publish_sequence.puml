@@ -1,0 +1,37 @@
+@startuml U08_save_verify_publish_sequence
+!include style.iuml
+title U08 — Save, verify and publish (sequence, Sprint 2)
+actor Designer
+participant "web editor" as web
+participant gateway
+participant designer
+participant verifier
+database "designer schema" as db
+
+Designer -> web : Verify
+web -> gateway : PUT /versions/{id} {model}\n(only if there are unsaved edits)
+gateway -> gateway : check token, role = designer
+gateway -> designer : PUT + X-User-Email
+designer -> designer : Pathway.from_dict(model)
+designer -> db : model, status = draft, report = null
+designer --> web : 200 version
+web -> gateway : POST /versions/{id}/verify
+gateway -> designer : POST /versions/{id}/verify
+designer -> verifier : POST /verify {model}
+verifier -> verifier : structural checks → state search →\ndata flow → conditions → settings
+verifier --> designer : report {status, errors[path], states, ms}
+alt report.status = SAFE
+  designer -> db : status = verified, report
+else UNSAFE / TOO_LARGE
+  designer -> db : status = draft, report
+end
+designer --> web : 200 version + report
+web -> web : highlight first error,\nopen replay on the stuck state (NFR-USE-01)
+== later, when SAFE ==
+Designer -> web : Publish
+web -> gateway : POST /versions/{id}/publish
+gateway -> designer : POST /versions/{id}/publish
+designer -> designer : status must be verified
+designer -> db : status = published, published_at
+designer --> web : 200 (version is now read-only)
+@enduml

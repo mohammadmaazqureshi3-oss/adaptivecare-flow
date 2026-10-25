@@ -1,0 +1,78 @@
+@startuml U12_verifier_class
+!include style.iuml
+title U12 — Verifier (class, Sprint 2) · services/verifier
+hide empty members
+
+package verifier {
+  class "algorithm" as alg <<module>> {
+    verify(p, limit=200000): Report
+    structural_checks(p, report): bool
+    explore(g, report, limit)
+    check_move(g, report, m, move, m2, parent)
+    report_livelocks(...)
+    backward_reachable(succ, targets): set
+    path_to(m, parent): list[Move]
+    check_conditions(p, report)
+    check_settings(p, report)
+  }
+  class _Search {
+    parent: dict[Marking, (Marking, Move)]
+    queue: deque[Marking]
+    succ: dict[Marking, list[Marking]]
+    fired: set[str]
+    deadlocks: set[Marking]
+    unsafe: set[Marking]
+    run(): bool
+    expand(m): bool
+    analyse()
+  }
+  class "dataflow" as df <<module>> {
+    dataflow_check(p): list[VerificationError]
+    available_before(p, order): dict
+    reverse_postorder(p): list[str]
+    node_reads(p, id): set[str]
+  }
+  class Report {
+    errors: list[VerificationError]
+    states_explored: int
+    too_large: bool
+    elapsed_ms: float
+    status: SAFE | UNSAFE | TOO_LARGE
+    deduplicate()
+    to_dict()
+  }
+  class VerificationError {
+    type: str
+    nodes: list[str]
+    message: str
+    path: list[Move]
+    edge: str
+    pos: int
+  }
+  class "main (FastAPI)" as api {
+    POST /verify
+  }
+}
+package pathway_core {
+  class Pathway
+  class TokenGraph
+  class Move
+  class "settings" as st <<module>> {
+    settings_issues(node): list[str]
+  }
+  class "conditions" as cond <<module>> {
+    parse(), typecheck()
+  }
+}
+api --> alg
+alg --> _Search
+alg --> df
+alg --> Report
+Report *-- VerificationError
+VerificationError --> Move
+_Search --> TokenGraph
+alg --> cond
+alg --> st
+df --> Pathway
+TokenGraph --> Pathway
+@enduml

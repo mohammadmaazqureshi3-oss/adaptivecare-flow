@@ -19,11 +19,14 @@ jobs:
       - name: Lint (ruff)
         run: ruff check packages services && ruff format --check packages services
       - name: Types (mypy)
-        run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer
+        run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient
       - name: Tests and coverage (NFR-MNT-01)
         run: python -m pytest --cov --cov-report=term
       - name: Complexity (NFR-MNT-02)
-        run: radon cc -n C -s packages/pathway-core/src services -e "*/tests/*"
+        # radon only lists functions rated C or worse (complexity > 10); any output fails the job.
+        run: |
+          found="$(radon cc -n C -s packages/pathway-core/src services scripts -e '*/tests/*')"
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi
       - name: Security (NFR-SEC-06)
         run: |
           bandit -q -r packages/pathway-core/src services -x "*/tests/*"

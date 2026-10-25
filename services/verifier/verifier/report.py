@@ -18,6 +18,7 @@ ERROR_TYPES = {
     "missing_data": "5. data soundness",
     "type_error": "5. data soundness",
     "syntax_error": "5. data soundness",
+    "settings": "well-formed task settings",
 }
 
 
@@ -30,8 +31,9 @@ class VerificationError:
     edge: str | None = None  # for condition errors: the branch whose condition is wrong
     pos: int | None = None  # for condition errors: character position
 
-    def key(self) -> tuple[str, tuple[str, ...], str | None]:
-        return (self.type, tuple(sorted(self.nodes)), self.edge)
+    def key(self) -> tuple[str, tuple[str, ...], str | None, str]:
+        # The message is part of the key: two different problems on one node are both reported.
+        return (self.type, tuple(sorted(self.nodes)), self.edge, self.message)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -71,7 +73,7 @@ class Report:
 
     def deduplicate(self) -> Report:
         """Keep one error per type and node set: the one with the shortest path."""
-        best: dict[tuple[str, tuple[str, ...], str | None], VerificationError] = {}
+        best: dict[tuple[str, tuple[str, ...], str | None, str], VerificationError] = {}
         for e in self.errors:
             k = e.key()
             if k not in best or len(e.path) < len(best[k].path):

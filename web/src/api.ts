@@ -68,10 +68,36 @@ export interface ConditionCheck {
   errors: { kind: "syntax" | "type"; message: string; pos: number }[];
 }
 
+export type Sex = "female" | "male" | "other" | "unknown";
+export type ArrivalMode = "walk_in" | "ambulance" | "referral" | "other";
+
+export interface Patient {
+  id: number;
+  mrn: string;
+  name: string;
+  date_of_birth: string;
+  age: number;
+  sex: Sex;
+  arrival_mode: ArrivalMode;
+  chief_complaint: string;
+  arrived_at: string;
+  registered_by: string;
+}
+
+export interface PatientIn {
+  name: string;
+  date_of_birth: string;
+  sex: Sex;
+  arrival_mode: ArrivalMode;
+  chief_complaint: string;
+  confirm_duplicate?: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public detail?: unknown,
   ) {
     super(message);
   }
@@ -136,13 +162,16 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
   }
   if (!r.ok) {
     let message = `${r.status} ${r.statusText}`;
+    let detail: unknown;
     try {
-      const detail = (await r.json()).detail;
-      message = typeof detail === "string" ? detail : detail.map((d: { msg: string }) => d.msg).join("; ");
+      detail = (await r.json()).detail;
+      if (typeof detail === "string") message = detail;
+      else if (Array.isArray(detail)) message = detail.map((d: { msg: string }) => d.msg).join("; ");
+      else if (detail && typeof detail === "object" && "message" in detail) message = String(detail.message);
     } catch {
       /* keep the status text */
     }
-    throw new ApiError(r.status, message);
+    throw new ApiError(r.status, message, detail);
   }
   return (await r.json()) as T;
 }
@@ -184,4 +213,7 @@ export const api = {
   publish: (id: number) => request<Version>("POST", `/versions/${id}/publish`),
   checkCondition: (condition: string, variables: PathwayModel["variables"]) =>
     request<ConditionCheck>("POST", "/conditions/check", { condition, variables }),
+
+  searchPatients: (q: string) => request<Patient[]>("GET", `/patients?q=${encodeURIComponent(q)}`),
+  registerPatient: (p: PatientIn) => request<Patient>("POST", "/patients", p),
 };

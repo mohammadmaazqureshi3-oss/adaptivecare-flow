@@ -28,6 +28,7 @@ import {
   nextId,
   NODE_LABELS,
   quickChecks,
+  replay,
   toFlow,
   type EdgeData,
   type FlowEdge,
@@ -240,29 +241,59 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
       await load(v.id);
     });
 
-  // Highlight the selected error: its nodes in red, the counterexample path in amber.
-  const pathNodes = useMemo(() => new Set(selectedError?.path.map((m) => m.node) ?? []), [selectedError]);
-  const pathEdges = useMemo(
-    () => new Set(selectedError?.path.flatMap((m) => [...m.consumed, ...m.produced]) ?? []),
-    [selectedError],
+  // Replay of the selected error's counterexample (NFR-USE-01). It runs on the saved
+  // version the report belongs to, and is hidden while there are unsaved edits.
+  const steps = useMemo(
+    () => (selectedError && version && !dirty ? replay(version.model, selectedError.path) : []),
+    [selectedError, version, dirty],
   );
-  const shownNodes = useMemo(
-    () =>
-      nodes.map((n) => ({
-        ...n,
-        className: selectedError?.nodes.includes(n.id) ? "hl-error" : pathNodes.has(n.id) ? "hl-path" : "",
-      })),
-    [nodes, selectedError, pathNodes],
+  const [step, setStep] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    setStep(Math.max(steps.length - 1, 0)); // open on the bad state; step back from there
+    setPlaying(false);
+  }, [steps]);
+  useEffect(() => {
+    if (!playing) return;
+    if (step >= steps.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    const t = setTimeout(() => setStep((k) => k + 1), 800);
+    return () => clearTimeout(t);
+  }, [playing, step, steps.length]);
+
+  const current = steps[step];
+  const atEnd = step === steps.length - 1;
+  const firedBefore = useMemo(
+    () => new Set(selectedError?.path.slice(0, Math.max(step - 1, 0)).map((m) => m.node) ?? []),
+    [selectedError, step],
   );
+
+  const shownNodes = useMemo(() => {
+    const nodeClass = (id: string): string => {
+      if (!selectedError) return "";
+      if (!current) return selectedError.nodes.includes(id) ? "hl-error" : "";
+      if (current.firing === id) return "hl-firing";
+      if (atEnd && selectedError.nodes.includes(id)) return "hl-error";
+      return firedBefore.has(id) ? "hl-path" : "";
+    };
+    return nodes.map((n) => ({ ...n, className: nodeClass(n.id) }));
+  }, [nodes, selectedError, current, atEnd, firedBefore]);
   const shownEdges = useMemo(
     () =>
-      [...edges, ...fallbackEdges(nodes)].map((e) => ({
-        ...e,
-        className: [e.className, selectedError?.edge === e.id ? "hl-error-edge" : pathEdges.has(e.id) ? "hl-path-edge" : ""]
-          .filter(Boolean)
-          .join(" "),
-      })),
-    [edges, nodes, selectedError, pathEdges],
+      [...edges, ...fallbackEdges(nodes)].map((e) => {
+        const tokens = current?.tokens[e.id] ?? 0;
+        const base = typeof e.label === "string" ? e.label : "";
+        return {
+          ...e,
+          label: tokens ? `${"●".repeat(tokens)} ${base}`.trim() : e.label,
+          className: [e.className, selectedError?.edge === e.id ? "hl-error-edge" : "", tokens ? "has-token" : ""]
+            .filter(Boolean)
+            .join(" "),
+        };
+      }),
+    [edges, nodes, selectedError, current],
   );
 
   const selectedNode = selection?.kind === "node" ? nodes.find((n) => n.id === selection.id) : undefined;
@@ -397,7 +428,19 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
               ))}
             </div>
           )}
-          {version.report && <ReportPanel report={version.report} selected={selectedError} onSelect={setSelectedError} />}
+          {version.report && (
+            <ReportPanel
+              report={version.report}
+              selected={selectedError}
+              onSelect={setSelectedError}
+              replay={
+                steps.length > 1
+                  ? { step, total: steps.length, firing: current?.firing ?? null, playing, setStep, setPlaying }
+                  : null
+              }
+              stale={dirty}
+            />
+          )}
         </aside>
       </div>
     </div>

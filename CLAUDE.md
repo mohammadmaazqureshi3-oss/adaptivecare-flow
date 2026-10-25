@@ -30,6 +30,6 @@ This file is under version control and is part of the AI tooling architecture
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e packages/pathway-core -r requirements-dev.txt
 .venv/bin/python -m pytest --cov
-.venv/bin/ruff check packages services && .venv/bin/mypy packages/pathway-core/src services/verifier/verifier
+.venv/bin/ruff check packages services && .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient
 cp .env.example .env && docker compose up --build
 ```

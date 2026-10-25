@@ -144,3 +144,32 @@ def test_every_counterexample_replays_to_its_state() -> None:
             if err.type == "deadlock":
                 m = g.replay(err.path)
                 assert not g.enabled_moves(m) and not g.is_complete(m)
+
+
+def test_des04_bad_settings_make_the_pathway_unsafe_with_one_error_each() -> None:
+    p = pw(
+        "s:start a:task b:task e:end",
+        "s>a a>b b>e",
+        a={"kind": "service", "service": "Lab", "retry": {"max": 0, "baseDelayS": 1}, "undo": ""},
+        b={"deadline": {"minutes": 10, "escalation": [{"role": "", "afterMin": 5}]}},
+    )
+    r = verify(p)
+    settings = [e for e in r.errors if e.type == "settings"]
+    assert r.status == "UNSAFE"
+    assert sorted(e.nodes[0] for e in settings) == ["a", "a", "b"]  # two problems on a, both kept
+    assert all(e.to_dict()["property"] == "well-formed task settings" for e in settings)
+
+
+def test_des04_fallback_cannot_point_to_itself() -> None:
+    p = pw("s:start a:task e:end", "s>a a>e", a={"kind": "service", "service": "Lab", "fallback": "a"})
+    assert any("not back to itself" in e.message for e in verify(p).errors)
+
+
+def test_des04_triage_settings_are_valid() -> None:
+    assert not [e for e in verify(load("triage")).errors if e.type == "settings"]
+
+
+def test_structure_reports_every_problem_on_a_node() -> None:
+    p = pw("s:start x:xor_split a:task e:end", "s>x x>a?true a>e")
+    messages = [e.message for e in verify(p).errors if e.nodes == ["x"]]
+    assert any("two branches" in m for m in messages) and any("default branch" in m for m in messages)

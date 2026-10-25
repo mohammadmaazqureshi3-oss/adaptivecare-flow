@@ -21,6 +21,12 @@ DEMO_USERS = [
     ("Mia Manager", "manager@adaptivecare.test", "manager-demo-1", "manager"),
 ]
 PATHWAYS = [("triage", "Emergency triage"), ("imaging_deadlock", "Imaging (has a deadlock)")]
+# Synthetic patients only (NFR-EXT-01).
+PATIENTS = [
+    ("Ada Lovelace", "1985-12-10", "female", "walk_in", "chest pain"),
+    ("Alan Turing", "1952-06-23", "male", "ambulance", "shortness of breath"),
+    ("Grace Hopper", "1946-12-09", "female", "referral", "fall, wrist pain"),
+]
 
 
 def env(name: str) -> str:
@@ -56,6 +62,17 @@ def main() -> None:
             model = json.loads((ROOT / "pathways" / f"{pid}.json").read_text())
             c.put(f"/versions/{vid}", json={"model": model}, headers=designer).raise_for_status()
             print(f"pathway {pid}: loaded as draft v1")
+        nurse = token(c, DEMO_USERS[1][1], DEMO_USERS[1][2])
+        for name, dob, sex, mode, complaint in PATIENTS:
+            body = {
+                "name": name,
+                "date_of_birth": dob,
+                "sex": sex,
+                "arrival_mode": mode,
+                "chief_complaint": complaint,
+            }
+            r = c.post("/patients", json=body, headers=nurse)
+            print(f"patient {name:14} {r.json()['mrn'] if r.status_code == 201 else 'already registered'}")
 
 
 if __name__ == "__main__":

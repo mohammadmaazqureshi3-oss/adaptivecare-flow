@@ -17,11 +17,11 @@ docker compose up --build
 Open <http://localhost:8080> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
 <http://localhost:8000/health/all> shows every service's health.
 
-### Without Docker (Sprint 1 services only)
+### Without Docker (the services built so far)
 
 ```bash
-./scripts/dev.sh                          # gateway :8000, auth, designer, verifier
-.venv/bin/python scripts/seed_demo.py     # demo users and the example pathways
+./scripts/dev.sh                          # gateway :8000, auth, designer, verifier, patient
+.venv/bin/python scripts/seed_demo.py     # demo users, example pathways, synthetic patients
 npm --prefix web install && npm --prefix web run dev   # editor on http://localhost:5173
 ```
 
@@ -34,7 +34,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e packages/pathway-core -r requirements-dev.txt
 .venv/bin/python -m pytest --cov
 .venv/bin/ruff check packages services
-.venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer
+.venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient
 npm --prefix web test && npm --prefix web run typecheck
 ```
 
@@ -53,17 +53,18 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 
 | Path | What it is |
 |------|------------|
-| `packages/pathway-core/` | Pathway model, the eight token rules, condition lexer/parser/type checker/evaluator |
+| `packages/pathway-core/` | Pathway model, the eight token rules, condition language, task settings (DES-04) |
 | `services/verifier/` | **Algorithm 1** — state-space search, soundness checks, data-flow fixed point, counterexamples |
 | `services/auth/` | Users, roles, bcrypt, JWT access/refresh tokens (AUTH-01/02) |
 | `services/gateway/` | Single entry point: token check, permission matrix, proxy (AUTH-03) |
 | `services/designer/` | Pathways, versions, Verify, Publish, live condition checks (DES-01..05) |
-| `services/{simulator,deployer,engine,worklist,patient,ml}/` | Service skeletons (Sprint 0) |
+| `services/patient/` | Register and search patients (PAT-01) |
+| `services/{simulator,deployer,engine,worklist,ml}/` | Service skeletons (Sprint 0) |
 | `web/` | React + React Flow pathway editor and admin pages |
 | `scripts/` | `dev.sh` (run without Docker), `seed_demo.py` (demo users and pathways) |
 | `pathways/` | `triage.json` (SAFE), `imaging_deadlock.json` (the worked example, UNSAFE), `imaging_fixed.json` |
 | `contracts/events.md` | Event envelope and catalog, REST contract |
-| `docs/uml/` | PlantUML diagrams (U01–U06, U31, U32, E1) |
+| `docs/uml/` | PlantUML diagrams (U01–U12, U31, U32, E1) |
 | `docs/ai-log/` | Prompt log per sprint (requirement P21) |
 | `docs/daily/` | Daily scrum notes |
 | `CLAUDE.md` | Rules file for AI tools |
@@ -74,5 +75,5 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 |--------|------|-------|
 | 0 | Outline planning and architecture | Skeleton, CI, rules file, UML drafts done |
 | 1 | Pathway model, editor, login | Done: auth, gateway permission matrix, designer, React Flow editor |
-| 2 | Algorithm 1: Verifier | Algorithm, tests and canvas highlighting done; step-by-step replay (NFR-USE-01), DES-04 tests, PAT-01 to do |
+| 2 | Algorithm 1: Verifier | Done: Verifier, counterexample replay (NFR-USE-01), task settings (DES-04), patients (PAT-01), UML U07–U12 |
 | 3–7 | Engine, Deploy, Simulator, ML, clinical pathways, hardening | Not started |

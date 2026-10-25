@@ -222,6 +222,7 @@ function TaskFields({ node, nodes, variables, readOnly, onChange }: Omit<NodePro
 
       <details open={!!d.retry || !!d.fallback}>
         <summary>Failure handling</summary>
+        {kind !== "human" && (
         <Field label="Retries (max)">
           <input
             type="number"
@@ -234,7 +235,8 @@ function TaskFields({ node, nodes, variables, readOnly, onChange }: Omit<NodePro
             }}
           />
         </Field>
-        {d.retry && (
+        )}
+        {kind !== "human" && d.retry && (
           <Field label="First retry delay (s), doubling">
             <input
               type="number"

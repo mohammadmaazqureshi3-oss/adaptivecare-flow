@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from designer.db import Database, PathwayRow, VersionRow, make_engine, now
+from designer.db import Database, PathwayRow, VersionRow, iso, make_engine, now
 
 VerifyFn = Callable[[dict[str, Any]], dict[str, Any]]
 
@@ -80,8 +80,8 @@ def version_out(v: VersionRow, full: bool = True) -> dict[str, Any]:
         "number": v.number,
         "status": v.status,
         "author": v.author,
-        "updated_at": v.updated_at.isoformat(),
-        "published_at": v.published_at.isoformat() if v.published_at else None,
+        "updated_at": iso(v.updated_at),
+        "published_at": iso(v.published_at) if v.published_at else None,
         "report_status": v.report["status"] if v.report else None,
     }
     if full:

@@ -23,6 +23,11 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+def iso(dt: datetime) -> str:
+    """ISO 8601 in UTC. SQLite returns stored times without a zone; they were written in UTC."""
+    return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).isoformat()
+
+
 class Base(DeclarativeBase):
     pass
 

@@ -73,6 +73,8 @@ def test_nfr_sec02_permission_matrix(client: TestClient, rule, role: str) -> Non
         ("admin", "PUT", "/versions/1"),  # separation of duties: admins do not edit pathways
         ("designer", "POST", "/users"),  # only admins manage users
         ("doctor", "GET", "/pathways"),
+        ("designer", "POST", "/patients"),  # only clinical staff register patients
+        ("manager", "GET", "/patients"),
     ],
 )
 def test_auth03_matrix_spot_checks_from_section_10(

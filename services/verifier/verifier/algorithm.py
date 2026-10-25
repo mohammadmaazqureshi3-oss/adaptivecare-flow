@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from pathway_core import Edge, Marking, Move, Node, Pathway, TokenGraph
 from pathway_core.conditions import ConditionSyntaxError, parse, typecheck
+from pathway_core.settings import settings_issues
 
 from verifier.dataflow import dataflow_check
 from verifier.report import Report, VerificationError
@@ -34,6 +35,7 @@ def verify(p: Pathway, limit: int = DEFAULT_LIMIT) -> Report:
             for err in dataflow_check(p):
                 report.add(err)
         check_conditions(p, report)
+    check_settings(p, report)
     report.deduplicate()
     report.elapsed_ms = (time.perf_counter() - t0) * 1000
     return report
@@ -335,3 +337,28 @@ def check_conditions(p: Pathway, report: Report) -> None:
                     pos=issue.pos,
                 )
             )
+
+
+# ---- task settings (DES-04) ------------------------------------------------------
+
+
+def check_settings(p: Pathway, report: Report) -> None:
+    """Deadlines, escalation, retries, fallback, undo and durations must be usable as set."""
+    nodes = {n.id: n for n in p.nodes}
+    for n in p.nodes:
+        issues = settings_issues(n)
+        if (fb := _fallback_issue(n, nodes)) is not None:
+            issues.append(fb)
+        for msg in issues:
+            report.add(VerificationError("settings", [n.id], f"{n.label or n.id}: {msg}"))
+
+
+def _fallback_issue(n: Node, nodes: dict[str, Node]) -> str | None:
+    if n.fallback is None:
+        return None
+    if n.type != "task":
+        return "only tasks can have a fallback"
+    target = nodes.get(n.fallback)
+    if n.fallback == n.id or (target is not None and target.type == "start"):
+        return "a fallback must lead to another step, not back to itself or to Start"
+    return None

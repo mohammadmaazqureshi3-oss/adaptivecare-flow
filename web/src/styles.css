@@ -175,3 +175,27 @@ summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; }
   .side { width: auto; border-left: 0; border-top: 1px solid var(--line); }
   .topbar { flex-wrap: wrap; }
 }
+
+/* ---- counterexample replay (NFR-USE-01) ---- */
+.replay { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 0.35rem; cursor: default; }
+.replay-buttons { display: flex; align-items: center; gap: 0.15rem; }
+.replay-buttons button { padding: 0.15rem 0.45rem; }
+.replay input[type="range"] { padding: 0; }
+.warn-text { color: var(--warn); }
+.react-flow__node.hl-firing .pn-task, .react-flow__node.hl-firing .pn-event { border-color: var(--accent); box-shadow: 0 0 0 4px #bfd3ff; }
+.react-flow__node.hl-firing .pn-gateway, .react-flow__node.hl-firing .pn-diamond-shape { border-color: var(--accent); background: #dbe7ff; }
+.react-flow__edge.has-token path { stroke: var(--accent); stroke-width: 3; }
+.react-flow__edge.has-token .react-flow__edge-text { fill: var(--accent); font-weight: 700; }
+/* The diamond is clip-path shaped, which hides borders, so its highlights are stronger fills. */
+.react-flow__node.hl-path .pn-diamond-shape { background: #fcd34d; }
+.react-flow__node.hl-error .pn-diamond-shape { background: #fca5a5; }
+.react-flow__node.hl-firing .pn-diamond-shape { background: #93c5fd; }
+
+/* ---- patients (PAT-01) ---- */
+.patient-form { display: flex; flex-direction: column; gap: 0.8rem; }
+.duplicate { background: var(--warn-bg); color: #713f12; border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.88rem; }
+.duplicate ul { margin: 0.4rem 0 0.6rem; padding-left: 1.2rem; }
+button.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+.notice-inline { padding: 0.5rem 0.8rem; border-radius: 8px; font-size: 0.88rem; }
+.notice-inline.info { background: var(--ok-bg); color: var(--ok); }
+.notice-inline.error { background: var(--bad-bg); color: var(--bad); }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -15,11 +16,13 @@ ADMIN = {"email": "admin@example.org", "password": "admin-pass-123"}
 
 
 @pytest.fixture
-def db(monkeypatch: pytest.MonkeyPatch) -> Database:
+def db(monkeypatch: pytest.MonkeyPatch) -> Iterator[Database]:
     monkeypatch.setenv("JWT_SECRET", "test-secret-0123456789abcdef0123456789")
     monkeypatch.setenv("ADMIN_EMAIL", ADMIN["email"])
     monkeypatch.setenv("ADMIN_PASSWORD", ADMIN["password"])
-    return Database(make_engine("sqlite://"))
+    database = Database(make_engine("sqlite://"))
+    yield database
+    database.engine.dispose()
 
 
 @pytest.fixture
