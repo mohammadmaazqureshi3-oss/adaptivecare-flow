@@ -1,0 +1,28 @@
+@startuml U32_deployment
+!include style.iuml
+title U32 — Containers on one host (deployment, Sprint 0 draft)
+node "Host (macOS Apple silicon or Linux)\nDocker Engine" as host {
+  node "compose network" {
+    artifact "web: nginx:1.27" as web
+    artifact "gateway :8000" as gw
+    artifact auth
+    artifact designer
+    artifact verifier
+    artifact simulator
+    artifact "deployer\n(docker.sock mounted, NFR-SEC-04)" as dep
+    artifact worklist
+    artifact patient
+    artifact ml
+    artifact "engine-triage-v1 …\n(one per deployed version)" as eng
+    database "postgres:16" as pg
+    queue "rabbitmq:3" as mq
+  }
+}
+web -[hidden]- gw
+dep ..> eng : starts / stops
+note right of host
+  Ports exposed to the host:
+  8080 web, 8000 gateway,
+  15672 RabbitMQ console (dev only).
+end note
+@enduml

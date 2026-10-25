@@ -1,0 +1,95 @@
+# AdaptiveCare Flow — the whole platform with one command (NFR-POR-01):
+#   cp .env.example .env && docker compose up --build
+# Users reach the system only through the gateway (8000) and the web app (8080).
+# Engine containers are not listed: the deployer starts one per deployed pathway
+# version from Sprint 4 (plan Section 9). The image is built under the "engine" profile.
+
+x-service: &service
+  restart: unless-stopped
+  env_file: .env
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: adaptivecare
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d adaptivecare"]
+      interval: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    # The topic exchange care.events is declared by the services themselves (contracts/events.md).
+    ports: ["15672:15672"]  # management UI, for development only
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 10
+
+  gateway:
+    <<: *service
+    build: { context: ., dockerfile: services/gateway/Dockerfile }
+    ports: ["8000:8000"]
+
+  auth:
+    <<: *service
+    build: { context: ., dockerfile: services/auth/Dockerfile }
+
+  designer:
+    <<: *service
+    build: { context: ., dockerfile: services/designer/Dockerfile }
+
+  verifier:
+    <<: *service
+    build: { context: ., dockerfile: services/verifier/Dockerfile }
+    depends_on: []  # stateless: needs neither the database nor the broker
+
+  simulator:
+    <<: *service
+    build: { context: ., dockerfile: services/simulator/Dockerfile }
+
+  deployer:
+    <<: *service
+    build: { context: ., dockerfile: services/deployer/Dockerfile }
+    # NFR-SEC-04: least privilege. Only the deployer may reach the Docker socket.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  worklist:
+    <<: *service
+    build: { context: ., dockerfile: services/worklist/Dockerfile }
+
+  patient:
+    <<: *service
+    build: { context: ., dockerfile: services/patient/Dockerfile }
+
+  ml:
+    <<: *service
+    build: { context: ., dockerfile: services/ml/Dockerfile }
+
+  engine:
+    <<: *service
+    build: { context: ., dockerfile: services/engine/Dockerfile }
+    image: adaptivecare/engine:dev
+    profiles: ["engine"]
+
+  web:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./web/public:/usr/share/nginx/html:ro
+    ports: ["8080:80"]
+
+volumes:
+  pgdata:

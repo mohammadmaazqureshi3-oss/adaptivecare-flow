@@ -1,0 +1,24 @@
+{
+  "id": "imaging_deadlock",
+  "version": 1,
+  "name": "Worked example: a decision feeding a parallel join (UNSAFE)",
+  "variables": [{"name": "imaging", "type": "string"}],
+  "nodes": [
+    {"id": "start", "type": "start", "label": "Start"},
+    {"id": "register", "type": "task", "kind": "human", "role": "nurse", "label": "Register", "outputs": ["imaging"]},
+    {"id": "imaging_type", "type": "xor_split", "label": "Imaging type"},
+    {"id": "xray", "type": "task", "kind": "service", "service": "Radiology", "label": "X-ray"},
+    {"id": "ct", "type": "task", "kind": "service", "service": "Radiology", "label": "CT"},
+    {"id": "wait_both", "type": "and_join", "label": "Wait for both"},
+    {"id": "end", "type": "end", "label": "End"}
+  ],
+  "edges": [
+    {"from": "start", "to": "register"},
+    {"from": "register", "to": "imaging_type"},
+    {"from": "imaging_type", "to": "xray", "condition": "imaging == 'xray'"},
+    {"from": "imaging_type", "to": "ct", "default": true},
+    {"from": "xray", "to": "wait_both"},
+    {"from": "ct", "to": "wait_both"},
+    {"from": "wait_both", "to": "end"}
+  ]
+}

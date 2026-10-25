@@ -1,0 +1,48 @@
+# Runs on every push (plan Section 13, Definition of Done): lint, types, tests with
+# coverage, complexity, security scans, then builds the images.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e packages/pathway-core -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check packages services && ruff format --check packages services
+      - name: Types (mypy)
+        run: mypy packages/pathway-core/src services/verifier/verifier
+      - name: Tests and coverage (NFR-MNT-01)
+        run: python -m pytest --cov --cov-report=term
+      - name: Complexity (NFR-MNT-02)
+        run: radon cc -n C -s packages/pathway-core/src services -e "*/tests/*"
+      - name: Security (NFR-SEC-06)
+        run: |
+          bandit -q -r packages/pathway-core/src services -x "*/tests/*"
+          pip-audit -r requirements-dev.txt
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  images:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all images
+        run: cp .env.example .env && docker compose --profile engine build

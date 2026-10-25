@@ -1,0 +1,42 @@
+@startuml U06_packages
+!include style.iuml
+title U06 — Repository packages and pathway-core reuse (Sprint 0 draft)
+package "packages" {
+  package "pathway-core" as core {
+    [model] as model
+    [tokens] as tokens
+    package "conditions" {
+      [lexer] --> [parser]
+      [parser] --> [ast]
+      [typecheck] --> [ast]
+      [evaluate] --> [ast]
+    }
+    tokens --> model
+  }
+}
+package "services" {
+  [verifier] as ver
+  [simulator] as sim
+  [engine] as eng
+  [designer]
+  [gateway]
+  [auth]
+  [deployer]
+  [worklist]
+  [patient]
+  [ml]
+}
+ver --> tokens : explores every move
+ver --> typecheck
+sim --> tokens : virtual moves
+sim --> evaluate
+eng --> tokens : real moves
+eng --> evaluate
+designer --> model
+deployer --> model : PIM -> PSM
+note bottom of core
+  The semantics exist once:
+  what is verified and simulated
+  is exactly what runs.
+end note
+@enduml

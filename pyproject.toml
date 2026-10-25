@@ -1,0 +1,36 @@
+# Repository-wide tool configuration. Each service and package has its own
+# dependencies; this file only configures the shared quality gates (NFR-MNT-01/02).
+
+[tool.pytest.ini_options]
+testpaths = ["packages/pathway-core/tests", "services/verifier/tests"]
+pythonpath = ["packages/pathway-core/src", "services/verifier", "services/verifier/tests"]
+addopts = "-q --import-mode=importlib"
+
+[tool.coverage.run]
+branch = true
+source = ["pathway_core", "verifier"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C90", "S"]
+ignore = ["S101"]  # assert is how pytest tests are written
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "C90"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "packages/pathway-core/src:services/verifier"
+explicit_package_bases = true
+exclude = ["tests/"]

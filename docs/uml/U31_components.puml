@@ -1,0 +1,40 @@
+@startuml U31_components
+!include style.iuml
+title U31 — Services and events (component, Sprint 0 draft)
+actor User
+node "web (nginx)" as web
+component gateway
+component auth
+component designer
+component verifier
+component simulator
+component deployer
+component "engine.<pathway>.v<n>" as engine
+component worklist
+component patient
+component ml
+queue "RabbitMQ\ncare.events" as mq
+database "PostgreSQL\n(schema per service)" as db
+
+User --> web
+web --> gateway : REST
+gateway --> auth : REST
+gateway --> designer : REST
+gateway --> deployer : REST
+gateway --> worklist : REST
+gateway --> patient : REST
+designer --> verifier : POST /verify
+designer --> simulator : POST /simulations
+deployer ..> engine : Docker Engine API\nstart / stop
+patient --> mq : PatientRegistered
+engine <--> mq : TaskRequested / TaskCompleted\nTimerFired, Case*
+worklist <--> mq
+ml <--> mq : PredictUrgency
+auth --> db
+designer --> db
+simulator --> db
+deployer --> db
+engine --> db
+worklist --> db
+patient --> db
+@enduml
