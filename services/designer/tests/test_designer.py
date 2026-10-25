@@ -153,3 +153,21 @@ def test_des04_task_policies_are_saved_and_checked_before_publish(client: TestCl
     v = client.post(f"/versions/{vid}/verify").json()  # ...but not published
     assert v["status"] == "draft" and [e["type"] for e in v["report"]["errors"]] == ["settings"]
     assert client.post(f"/versions/{vid}/publish").status_code == 409
+
+
+def test_pathway_deployed_marks_the_version_deployed_and_it_stays_immutable(client: TestClient) -> None:
+    from care_events import Event
+    from designer.main import DeploymentListener
+
+    vid = new_pathway(client)["latest_version"]["id"]
+    client.post(f"/versions/{vid}/verify")
+    client.post(f"/versions/{vid}/publish")
+    db = client.app.state.db  # type: ignore[attr-defined]
+    DeploymentListener(db).on_event(
+        Event("PathwayDeployed", {"version_id": vid}, pathway="triage", version=1)
+    )
+    v = client.get(f"/versions/{vid}").json()
+    assert v["status"] == "deployed"
+    assert client.put(f"/versions/{vid}", json={"model": v["model"]}).status_code == 409
+    assert client.get("/pathways/triage").json()["published_versions"] == [1]
+    assert client.post("/pathways/triage/versions").json()["number"] == 2  # a new draft is allowed

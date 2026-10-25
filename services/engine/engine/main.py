@@ -19,7 +19,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pathway_core import Pathway
 from sqlalchemy import select
 
-from engine.service import EngineService
+from engine.service import EngineService, Scheduler
 from engine.store import CaseRow, Store, make_engine
 
 
@@ -31,7 +31,7 @@ def load_pathway() -> Pathway:
     version_id = os.environ["ENGINE_VERSION_ID"]
     url = os.environ.get("DESIGNER_URL", "http://designer:8000")
     v = httpx.get(f"{url}/versions/{version_id}", timeout=10).raise_for_status().json()
-    if v["status"] != "published":
+    if v["status"] not in ("published", "deployed"):
         raise RuntimeError(f"version {version_id} is {v['status']}; only published versions run")
     return Pathway.from_dict(v["model"])
 
@@ -90,21 +90,24 @@ def create_app(pathway: Pathway | None = None, store: Store | None = None, bus: 
     the_bus: Bus = bus or RabbitBus(os.environ["AMQP_URL"])
     relay = OutboxRelay(store.sessions, the_bus)
     svc = EngineService(pathway, store, relay)
+    scheduler = Scheduler(svc)
     the_bus.subscribe(svc.queue_name, svc.bindings, svc.on_event)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         relay.start()
+        scheduler.start()
         if owns_bus:
             the_bus.start()
         yield
         if owns_bus:
             the_bus.stop()
+        scheduler.stop()
         relay.stop()
 
     app = FastAPI(
         title=f"AdaptiveCare engine {pathway.id} v{pathway.version}", version="0.3.0", lifespan=lifespan
     )
-    app.state.engine = svc
+    app.state.engine, app.state.scheduler = svc, scheduler
     app.include_router(router)
     return app

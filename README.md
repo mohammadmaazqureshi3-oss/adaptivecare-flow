@@ -19,12 +19,13 @@ Open <http://localhost:8080> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` f
 
 ### Without Docker (the services built so far)
 
-`dev.sh` runs every built service in one process with an in-memory bus in place of RabbitMQ,
-and starts an engine for each published pathway version (a stand-in for the Sprint 4 deployer).
+`dev.sh` runs every built service in one process with an in-memory bus in place of RabbitMQ.
+The deployer runs there with a local runtime: pressing Deploy (as admin) starts that version's
+engine in the same process instead of a Docker container.
 
 ```bash
-./scripts/dev.sh                          # gateway :8000 … worklist :8005, ml :8006, engines :8010+
-.venv/bin/python scripts/seed_demo.py     # demo users, pathways (Triage published), patients
+./scripts/dev.sh                          # gateway :8000 … ml :8006, deployer :8007, engines :8010+
+.venv/bin/python scripts/seed_demo.py     # demo users, pathways (Triage published and deployed), patients
 npm --prefix web install && npm --prefix web run dev   # editor on http://localhost:5173
 ```
 
@@ -38,7 +39,8 @@ python3 -m venv .venv
 .venv/bin/python -m pytest --cov
 .venv/bin/ruff check packages services
 .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient \
-  services/engine/engine services/worklist/worklist services/ml/ml packages/care-events/src
+  services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer \
+  packages/care-events/src
 npm --prefix web test && npm --prefix web run typecheck
 ```
 
@@ -64,16 +66,17 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | `services/designer/` | Pathways, versions, Verify, Publish, live condition checks (DES-01..05) |
 | `services/patient/` | Register and search patients (PAT-01); publishes `PatientRegistered` |
 | `packages/care-events/` | Event envelope, bus (in-memory and RabbitMQ), outbox and inbox |
-| `services/engine/` | **Algorithm 2** — token interpreter, event store, replay, one engine per version |
+| `services/engine/` | **Algorithm 2** — token interpreter, event store, replay, snapshots, timers, retries, escalation, compensation |
 | `services/worklist/` | Tasks for people: claim and complete with required outputs (WRK-01) |
 | `services/ml/` | Placeholder until Sprint 6: answers `PredictUrgency` with a permanent failure |
-| `services/{simulator,deployer}/` | Service skeletons (Sprint 0) |
+| `services/deployer/` | Deploy: PIM → PSM, start the engine, health check, `PathwayDeployed` (DEP-01) |
+| `services/simulator/` | Service skeleton (Sprint 0) |
 | `tests/system/` | In-process system test: patient → engine → ml → worklist |
 | `web/` | React + React Flow pathway editor and admin pages |
 | `scripts/` | `dev.sh` (run without Docker), `seed_demo.py` (demo users and pathways) |
 | `pathways/` | `triage.json` (SAFE), `imaging_deadlock.json` (the worked example, UNSAFE), `imaging_fixed.json` |
 | `contracts/events.md` | Event envelope and catalog, REST contract |
-| `docs/uml/` | PlantUML diagrams (U01–U16, U18, U31, U32, E1) |
+| `docs/uml/` | PlantUML diagrams (U01–U21, U31, U32, E1) |
 | `docs/ai-log/` | Prompt log per sprint (requirement P21) |
 | `docs/daily/` | Daily scrum notes |
 | `CLAUDE.md` | Rules file for AI tools |
@@ -86,4 +89,5 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | 1 | Pathway model, editor, login | Done: auth, gateway permission matrix, designer, React Flow editor |
 | 2 | Algorithm 1: Verifier | Done: Verifier, counterexample replay (NFR-USE-01), task settings (DES-04), patients (PAT-01), UML U07–U12 |
 | 3 | Algorithm 2: Engine core | Done: ENG-01..05, WRK-01, fault-injection and replay tests; RabbitMQ run pending (Docker) |
-| 4–7 | Engine reliability, Deploy, Simulator, ML, clinical pathways, hardening | Not started |
+| 4 | Algorithm 2 reliability and Deploy | Done: ENG-06..09, DEP-01; Docker runtime and RabbitMQ not yet run (Docker) |
+| 5–7 | Simulator, ML, clinical pathways, hardening | Not started |

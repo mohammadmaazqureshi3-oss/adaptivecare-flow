@@ -3,3 +3,4 @@ uvicorn[standard]==0.54.0
 httpx==0.28.1
 sqlalchemy==2.1.6
 psycopg[binary]==3.3.6
+pika==1.4.4

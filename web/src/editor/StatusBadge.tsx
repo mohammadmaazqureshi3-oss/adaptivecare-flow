@@ -2,6 +2,7 @@ const TEXT: Record<string, string> = {
   draft: "Draft",
   verified: "Verified",
   published: "Published",
+  deployed: "Deployed",
   SAFE: "SAFE",
   UNSAFE: "UNSAFE",
   TOO_LARGE: "Too large",

@@ -2,17 +2,20 @@
 
 For each inbound event, under the case's lock (I2):
 1. drop it if its id was already processed (I1);
-2. load the case: from memory, or by replaying its stored events (I3);
+2. load the case: from memory, or from its latest snapshot plus the events after it (I3);
 3. ``case.apply(event)``;
-4. store the event and the outbound events in ONE transaction (I5), then acknowledge.
-The outbox relay publishes afterwards.
+4. store the event, the outbound events and any new timers in ONE transaction (I5), then
+   acknowledge. The outbox relay publishes afterwards; the scheduler fires due timers.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections import defaultdict
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from care_events import Event, OutboxRelay, add_to_outbox, derived_id
@@ -21,9 +24,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from engine.case import Case
-from engine.store import CaseEventRow, CaseRow, Store, now
+from engine.store import CaseEventRow, CaseRow, SnapshotRow, Store, TimerRow, now
 
 log = logging.getLogger("engine")
+SNAPSHOT_EVERY = 50
 
 
 class EngineService:
@@ -66,15 +70,12 @@ class EngineService:
             with self.store.sessions.begin() as s:
                 if s.scalar(select(CaseEventRow.seq).where(CaseEventRow.event_id == event.event_id)):
                     return  # duplicate (I1)
-                case = self.cache.get(case_id) or self._replay(s, case_id)
+                case = self.cache.get(case_id) or self._load(s, case_id)
                 if case.status == "new" and (self.trigger is None or event.type != self.trigger):
                     log.info("ignoring %s for unknown case %s", event.type, case_id)
                     return
                 try:
-                    outbound = case.apply(event)
-                    s.add(CaseEventRow(event_id=event.event_id, case_id=case_id, event_json=event.to_json()))
-                    add_to_outbox(s, *outbound)
-                    self._summarise(s, case, event)
+                    self._commit(s, case, event, case.apply(event))
                 except Exception:
                     self.cache.pop(case_id, None)  # the in-memory case may be half-changed; rebuild next time
                     raise
@@ -82,12 +83,36 @@ class EngineService:
         if self.relay:
             self.relay.notify()
 
-    def _replay(self, s: Session, case_id: str) -> Case:
-        """Rebuild a case from its stored inbound events (I3)."""
-        case = Case(self.pathway, case_id)
-        for row in s.scalars(
-            select(CaseEventRow).where(CaseEventRow.case_id == case_id).order_by(CaseEventRow.seq)
-        ):
+    def _commit(self, s: Session, case: Case, event: Event, outbound: list[Event]) -> None:
+        row = CaseEventRow(event_id=event.event_id, case_id=case.id, event_json=event.to_json())
+        s.add(row)
+        for e in outbound:
+            if e.type == "TimerScheduled":  # kept here, not published: the scheduler fires it
+                due = datetime.fromisoformat(e.payload["due_at"])
+                s.add(TimerRow(id=e.event_id, case_id=case.id, due_at=due, event_json=e.to_json()))
+            else:
+                add_to_outbox(s, e)
+        self._summarise(s, case, event)
+        if case.events % SNAPSHOT_EVERY == 0:
+            s.flush()  # assigns row.seq
+            snap = s.get(SnapshotRow, case.id) or SnapshotRow(case_id=case.id)
+            snap.upto_seq, snap.state_json = row.seq, json.dumps(case.snapshot())
+            s.add(snap)
+
+    def _load(self, s: Session, case_id: str) -> Case:
+        """Latest snapshot plus the events after it (I3); a full replay when there is none."""
+        snap = s.get(SnapshotRow, case_id)
+        case = Case.from_snapshot(self.pathway, case_id, json.loads(snap.state_json)) if snap else None
+        return self._replay(s, case_id, case, snap.upto_seq if snap else 0)
+
+    def _replay(self, s: Session, case_id: str, case: Case | None = None, after: int = 0) -> Case:
+        case = case or Case(self.pathway, case_id)
+        rows = s.scalars(
+            select(CaseEventRow)
+            .where(CaseEventRow.case_id == case_id, CaseEventRow.seq > after)
+            .order_by(CaseEventRow.seq)
+        )
+        for row in rows:
             case.apply(Event.from_json(row.event_json))
         return case
 
@@ -102,9 +127,9 @@ class EngineService:
 
     # ---- reads -----------------------------------------------------------------------
 
-    def load(self, case_id: str) -> Case | None:
+    def load(self, case_id: str, full_replay: bool = False) -> Case | None:
         with self.store.sessions() as s:
-            case = self._replay(s, case_id)
+            case = self._replay(s, case_id) if full_replay else self._load(s, case_id)
         return None if case.status == "new" else case
 
     def drop_cache(self) -> None:
@@ -118,3 +143,67 @@ class EngineService:
             "version": self.pathway.version,
             "history": [vars(step) for step in case.history],
         }
+
+
+class Scheduler:
+    """Turns due timers into ``TimerFired`` events (plan Section 7, ENG-06/07).
+
+    Due times live in the ``timers`` table, so they survive restarts. Each fired event has
+    an id derived from its timer and goes through ``on_event``, so firing twice after a
+    crash changes nothing (I1). The event's time is the due time, keeping replay exact.
+    """
+
+    def __init__(
+        self,
+        svc: EngineService,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        interval_s: float = 1.0,
+    ) -> None:
+        self.svc = svc
+        self.clock = clock
+        self.interval_s = interval_s
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def tick(self) -> int:
+        """Fire every timer that is due now; returns how many fired."""
+        with self.svc.store.sessions() as s:
+            due = s.scalars(
+                select(TimerRow)
+                .where(TimerRow.fired.is_(False), TimerRow.due_at <= self.clock())
+                .order_by(TimerRow.due_at)
+            ).all()
+        for timer in due:
+            scheduled = Event.from_json(timer.event_json)
+            fired = Event(
+                "TimerFired",
+                scheduled.payload,
+                event_id=derived_id(timer.id, "fired"),
+                case_id=scheduled.case_id,
+                token_id=scheduled.token_id,
+                pathway=scheduled.pathway,
+                version=scheduled.version,
+                timestamp=scheduled.payload["due_at"],
+            )
+            self.svc.on_event(fired)
+            with self.svc.store.sessions.begin() as s:
+                row = s.get(TimerRow, timer.id)
+                if row is not None:
+                    row.fired = True
+        return len(due)
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, name="engine-scheduler", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_s):
+            try:
+                self.tick()
+            except Exception:
+                log.exception("scheduler tick failed; retrying")

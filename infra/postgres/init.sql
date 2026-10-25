@@ -6,5 +6,3 @@ CREATE SCHEMA IF NOT EXISTS simulator;
 CREATE SCHEMA IF NOT EXISTS deployer;
 CREATE SCHEMA IF NOT EXISTS worklist;
 CREATE SCHEMA IF NOT EXISTS patient;
--- Until the deployer exists, the manually started engine uses this schema.
-CREATE SCHEMA IF NOT EXISTS engine_triage_v1;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, setLoggedOutHandler, type User } from "./api";
+import { Alerts } from "./pages/Alerts";
 import { Editor } from "./pages/Editor";
 import { Login } from "./pages/Login";
 import { PathwayList } from "./pages/PathwayList";
@@ -20,7 +21,7 @@ function useHashRoute(): [string[], (path: string) => void] {
 }
 
 const PATHWAY_ROLES = ["designer", "manager", "admin"];
-const CLINICAL_ROLES = ["nurse", "doctor"];
+const CLINICAL_ROLES = ["nurse", "charge_nurse", "doctor"];
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -63,6 +64,11 @@ export function App() {
               Patients
             </a>
           )}
+          {(user.role === "manager" || user.role === "admin") && (
+            <a className={section === "alerts" ? "active" : ""} href="#/alerts">
+              Alerts
+            </a>
+          )}
           {user.role === "admin" && (
             <a className={section === "users" ? "active" : ""} href="#/users">
               Users
@@ -89,6 +95,7 @@ export function App() {
         {section === "users" && user.role === "admin" && <Users me={user} />}
         {section === "patients" && clinical && <Patients />}
         {section === "tasks" && clinical && <Tasks user={user} />}
+        {section === "alerts" && (user.role === "manager" || user.role === "admin") && <Alerts />}
         {section === "home" && (
           <div className="centered">
             <div className="card narrow">

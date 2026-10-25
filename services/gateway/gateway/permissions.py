@@ -10,13 +10,14 @@ import re
 from dataclasses import dataclass
 
 PUBLIC = frozenset({"*public*"})  # no token needed
-ANY_ROLE = frozenset({"admin", "designer", "nurse", "doctor", "manager"})
+ANY_ROLE = frozenset({"admin", "designer", "nurse", "charge_nurse", "doctor", "manager"})
 
 ADMIN = frozenset({"admin"})
 DESIGNER = frozenset({"designer"})
 # Managers read pathways to plan staffing; admins read published versions to deploy them (Sprint 4).
 PATHWAY_READERS = frozenset({"designer", "manager", "admin"})
-CLINICAL = frozenset({"nurse", "doctor"})
+# Charge nurses have a nurse's permissions and receive escalated tasks (decision 0004).
+CLINICAL = frozenset({"nurse", "charge_nurse", "doctor"})
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,9 @@ RULES: tuple[Rule, ...] = (
     Rule("POST", "/versions/{id}/verify", "designer", DESIGNER),
     Rule("POST", "/versions/{id}/publish", "designer", DESIGNER),
     Rule("POST", "/conditions/check", "designer", DESIGNER),
+    # deployer: only admins deploy (NFR-SEC-03, separation of duties)
+    Rule("POST", "/versions/{id}/deploy", "deployer", ADMIN),
+    Rule("GET", "/deployments", "deployer", PATHWAY_READERS),
     # patient: register and search (PAT-01)
     Rule("GET", "/patients", "patient", CLINICAL),
     Rule("POST", "/patients", "patient", CLINICAL),
@@ -60,6 +64,7 @@ RULES: tuple[Rule, ...] = (
     Rule("POST", "/tasks/{id}/claim", "worklist", CLINICAL),
     Rule("POST", "/tasks/{id}/release", "worklist", CLINICAL),
     Rule("POST", "/tasks/{id}/complete", "worklist", CLINICAL),
+    Rule("GET", "/notifications", "worklist", CLINICAL | {"manager", "admin"}),
 )
 
 _COMPILED = [(r, r.regex) for r in RULES]

@@ -4,6 +4,8 @@ COPY services/designer/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY packages/pathway-core /tmp/pathway-core
 RUN pip install --no-cache-dir /tmp/pathway-core
+COPY packages/care-events /tmp/care-events
+RUN pip install --no-cache-dir /tmp/care-events
 COPY services/designer/designer ./designer
 USER nobody
 EXPOSE 8000

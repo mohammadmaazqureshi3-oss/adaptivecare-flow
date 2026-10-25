@@ -211,3 +211,4 @@ button.danger-solid { background: var(--bad); border-color: var(--bad); color: #
 .due { font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: #eef0f3; }
 .due.soon { background: var(--warn-bg); color: var(--warn); }
 .due.overdue { background: var(--bad-bg); color: var(--bad); }
+.badge-deployed { background: #ccfbf1; color: #0f766e; }

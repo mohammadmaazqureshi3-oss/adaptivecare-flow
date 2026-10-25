@@ -134,3 +134,10 @@ def test_query_and_body_are_forwarded(monkeypatch: pytest.MonkeyPatch) -> None:
         "/pathways?draft=1", json={"id": "triage"}, headers={"Authorization": f"Bearer {token('designer')}"}
     )
     assert r.status_code == 201 and seen == {"query": "draft=1", "body": {"id": "triage"}}
+
+
+def test_nfr_sec03_designers_publish_but_only_admins_deploy(client: TestClient) -> None:
+    assert call(client, "POST", "/versions/1/publish", token("designer")).status_code == 200
+    assert call(client, "POST", "/versions/1/deploy", token("designer")).status_code == 403
+    r = call(client, "POST", "/versions/1/deploy", token("admin"))
+    assert r.status_code == 200 and r.json()["host"] == "deployer"

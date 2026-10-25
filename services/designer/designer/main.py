@@ -9,10 +9,13 @@ passes their identity in ``X-User-Email``.
 """
 
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 import httpx
+from care_events import Bus, Event
+from care_events.rabbit import RabbitBus
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from pathway_core import ModelError, Pathway
 from pathway_core.conditions import ConditionSyntaxError, parse, typecheck
@@ -23,6 +26,7 @@ from sqlalchemy.orm import Session
 from designer.db import Database, PathwayRow, VersionRow, iso, make_engine, now
 
 VerifyFn = Callable[[dict[str, Any]], dict[str, Any]]
+FROZEN = frozenset({"published", "deployed"})  # immutable from Publish on (DES-05)
 
 
 class PathwayIn(BaseModel):
@@ -91,7 +95,7 @@ def version_out(v: VersionRow, full: bool = True) -> dict[str, Any]:
 
 def pathway_out(p: PathwayRow) -> dict[str, Any]:
     latest = p.versions[-1] if p.versions else None
-    published = [v.number for v in p.versions if v.status == "published"]
+    published = [v.number for v in p.versions if v.status in FROZEN]
     return {
         "id": p.id,
         "name": p.name,
@@ -196,7 +200,7 @@ def new_draft(pathway_id: str, s: SessionDep, author: Author = "unknown") -> dic
     """Start the next version as a draft, copied from the latest one."""
     p = get_pathway(s, pathway_id)
     latest = p.versions[-1]
-    if latest.status != "published":
+    if latest.status not in FROZEN:
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"version {latest.number} is still a draft; edit that one"
         )
@@ -215,8 +219,8 @@ def read_version(version_id: int, s: SessionDep) -> dict[str, Any]:
 @router.put("/versions/{version_id}")
 def save_draft(version_id: int, body: VersionIn, s: SessionDep, author: Author = "unknown") -> dict[str, Any]:
     v = get_version(s, version_id)
-    if v.status == "published":
-        raise HTTPException(status.HTTP_409_CONFLICT, "published versions are immutable; start a new draft")
+    if v.status in FROZEN:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{v.status} versions are immutable; start a new draft")
     v.model = validated(body.model, v)
     v.status, v.report = "draft", None  # an edit invalidates the last verification
     v.author, v.updated_at = author, now()
@@ -230,7 +234,7 @@ def verify_version(
 ) -> dict[str, Any]:
     v = get_version(s, version_id)
     report = verify(v.model)
-    if v.status != "published":
+    if v.status not in FROZEN:
         v.report = report
         v.status = "verified" if report["status"] == "SAFE" else "draft"
         s.commit()
@@ -240,8 +244,8 @@ def verify_version(
 @router.post("/versions/{version_id}/publish")
 def publish(version_id: int, s: SessionDep) -> dict[str, Any]:
     v = get_version(s, version_id)
-    if v.status == "published":
-        raise HTTPException(status.HTTP_409_CONFLICT, "this version is already published")
+    if v.status in FROZEN:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"this version is already {v.status}")
     if v.status != "verified":
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Publish needs a SAFE verification of this exact version"
@@ -256,10 +260,38 @@ def condition_check(body: ConditionIn) -> dict[str, Any]:
     return check_condition(body)
 
 
-def create_app(db: Database | None = None, verify: VerifyFn = http_verifier) -> FastAPI:
-    """Build the service; tests pass an in-memory database and an in-process verifier."""
+class DeploymentListener:
+    """``PathwayDeployed`` from the deployer moves a published version to Deployed (U07)."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def on_event(self, event: Event) -> None:
+        with self.db.sessions.begin() as s:
+            v = s.get(VersionRow, event.payload.get("version_id"))
+            if v is not None and v.status == "published":
+                v.status = "deployed"
+
+
+def create_app(
+    db: Database | None = None, verify: VerifyFn = http_verifier, bus: Bus | None = None
+) -> FastAPI:
+    """Build the service; tests pass an in-memory database, an in-process verifier and a bus."""
     database = db or Database(make_engine())
-    app = FastAPI(title="AdaptiveCare designer", version="0.2.0")
+    owns_bus = bus is None
+    the_bus: Bus | None = bus or (RabbitBus(os.environ["AMQP_URL"]) if os.environ.get("AMQP_URL") else None)
+    if the_bus:
+        the_bus.subscribe("designer", ["PathwayDeployed"], DeploymentListener(database).on_event)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if owns_bus and the_bus:
+            the_bus.start()
+        yield
+        if owns_bus and the_bus:
+            the_bus.stop()
+
+    app = FastAPI(title="AdaptiveCare designer", version="0.4.0", lifespan=lifespan)
     app.state.db, app.state.verify = database, verify
     app.include_router(router)
     return app

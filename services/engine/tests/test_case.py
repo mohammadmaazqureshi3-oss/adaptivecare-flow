@@ -12,10 +12,11 @@ from pathway_core import Pathway
 
 PATHWAYS = Path(__file__).resolve().parents[3] / "pathways"
 TRIAGE = Pathway.from_dict(json.loads((PATHWAYS / "triage.json").read_text()))
+T0 = "2026-10-25T10:00:00+00:00"
 
 
 def registered(patient_id: str = "P000001", event_id: str = "reg-1") -> Event:
-    return Event("PatientRegistered", {"patient_id": patient_id, "age": 40}, event_id=event_id, timestamp="t")
+    return Event("PatientRegistered", {"patient_id": patient_id, "age": 40}, event_id=event_id, timestamp=T0)
 
 
 def reply(request: Event, type: str = "TaskCompleted", n: int = 0, **outputs: Any) -> Event:
@@ -37,13 +38,14 @@ def test_eng01_registration_starts_the_case_and_requests_both_parallel_tasks() -
     case = Case(TRIAGE, "case-1")
     out = case.apply(registered())
     assert case.status == "running" and case.data == {"patient_id": "P000001"}
-    assert [e.type for e in out] == ["CaseStarted", "TaskRequested", "TaskRequested"]
+    assert [e.type for e in out] == ["CaseStarted", "TaskRequested", "TimerScheduled", "TaskRequested"]
     reqs = requests(out)
     assert reqs["predict"].routing_key == "TaskRequested.PredictUrgency"
     assert reqs["vitals"].routing_key == "TaskRequested.worklist"
     assert reqs["vitals"].payload["role"] == "nurse"
     assert reqs["vitals"].payload["outputs"] == [{"name": "spo2", "type": "int"}]
     assert reqs["vitals"].payload["deadline"]["minutes"] == 10
+    assert reqs["vitals"].payload["due_at"] == "2026-10-25T10:10:00+00:00"
 
 
 def test_eng02_eng03_urgent_patient_is_routed_to_confirmation_and_finishes() -> None:
@@ -81,7 +83,8 @@ def test_permanent_failure_takes_the_fallback_branch() -> None:
 def test_failure_without_fallback_fails_the_case_and_cancels_tokens() -> None:
     case, reqs = started()
     out = case.apply(reply(reqs["vitals"], "TaskFailed"))
-    assert case.status == "failed" and [e.type for e in out] == ["CaseFailed"]
+    assert case.status == "failed" and [e.type for e in out] == ["CancelRequested", "CaseFailed"]
+    assert out[0].routing_key == "CancelRequested.PredictUrgency"  # only the other, still running task
     assert all(t.state == "cancelled" for t in case.tokens.values())
 
 
@@ -113,7 +116,7 @@ def test_messages_after_the_end_are_ignored() -> None:
 
 def test_missing_start_input_fails_the_case() -> None:
     case = Case(TRIAGE, "c")
-    case.apply(Event("PatientRegistered", {"age": 3}, event_id="r", timestamp="t"))
+    case.apply(Event("PatientRegistered", {"age": 3}, event_id="r", timestamp=T0))
     assert case.status == "failed" and "patient_id" in case.reason
 
 
@@ -140,6 +143,6 @@ def test_history_lists_each_event_before_what_it_caused() -> None:
         ("in", "PatientRegistered"),
         ("out", "CaseStarted"),
         ("out", "TaskRequested"),
-        ("out", "TaskRequested"),
+        ("out", "TimerScheduled"),
     ]
     assert case.history[-1].direction == "in" and "vitals completed" in case.history[-1].detail

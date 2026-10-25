@@ -3,6 +3,8 @@
 ``case_events`` keeps every inbound event a case accepted, in order: it is the case's
 source of truth, and replaying it rebuilds the case (I3). Outbound events go to the
 shared ``outbox`` table in the same transaction (I5). ``cases`` is a summary for lists.
+``timers`` holds due times (deadlines, retry delays, timer nodes) so they survive a
+restart; ``snapshots`` saves a case every 50 events so loading replays only the tail.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 from care_events import OutboxBase
-from sqlalchemy import DateTime, Integer, String, Text, create_engine, event
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -44,6 +46,24 @@ class CaseRow(Base):
     status: Mapped[str] = mapped_column(String(20))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class TimerRow(Base):
+    __tablename__ = "timers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # the TimerScheduled event id
+    case_id: Mapped[str] = mapped_column(String(36), index=True)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    event_json: Mapped[str] = mapped_column(Text)
+    fired: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
+class SnapshotRow(Base):
+    __tablename__ = "snapshots"
+
+    case_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    upto_seq: Mapped[int] = mapped_column(Integer)  # last case_events.seq included
+    state_json: Mapped[str] = mapped_column(Text)
 
 
 def make_engine(url: str | None = None, schema: str | None = None) -> Engine:

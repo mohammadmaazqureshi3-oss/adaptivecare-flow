@@ -116,3 +116,24 @@ def test_two_patients_get_independent_cases(stack: Stack) -> None:
     stack.wait_for(lambda: len(stack.tasks()) == 4)
     assert len(stack.cases()) == 2
     assert {t["patient_id"] for t in stack.tasks()} == {"P000001", "P000002"}
+
+
+def test_eng06_an_overdue_task_reaches_the_charge_nurse_and_the_manager(stack: Stack) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    register(stack, "Katherine Johnson")
+    stack.wait_for(lambda: any(t["label"] == "Measure vital signs" for t in stack.tasks()))
+    scheduler = stack.engine.app.state.scheduler  # type: ignore[attr-defined]
+    charge = {"x-user-email": "cara@x.org", "x-user-role": "charge_nurse"}
+    manager = {"x-user-email": "mia@x.org", "x-user-role": "manager"}
+
+    scheduler.clock = lambda: datetime.now(UTC) + timedelta(minutes=11)  # past the 10-minute deadline
+    scheduler.tick()
+    task = stack.wait_for(lambda: next(iter(stack.worklist.get("/tasks", headers=charge).json()), None))
+    assert task["label"] == "Measure vital signs" and task["level"] == 1
+    assert "Measure vital signs" not in {t["label"] for t in stack.tasks()}
+
+    scheduler.clock = lambda: datetime.now(UTC) + timedelta(minutes=17)  # charge nurse's 5 minutes are over
+    scheduler.tick()
+    alerts = stack.wait_for(lambda: stack.worklist.get("/notifications", headers=manager).json())
+    assert "every escalation level" in alerts[0]["message"]

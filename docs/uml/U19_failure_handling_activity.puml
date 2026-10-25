@@ -1,0 +1,36 @@
+@startuml U19_failure_handling_activity
+!include style.iuml
+title U19 — Failure handling (activity, Sprint 4) · Case._task_failed and compensation
+
+start
+:TaskFailed for the task waiting on exactly this wait id;
+if (temporary and retries left?\n(attempt ≤ retry.max)) then (yes)
+  :schedule retry timer after base × 2^(attempt−1) s;
+  :on TimerFired: attempt += 1, TaskRequested again\n(same wait id: a late success of an earlier attempt still counts);
+  stop
+elseif (fallback branch drawn?) then (yes)
+  :move the token onto the fallback arrow;
+  :continue with the token rules;
+  stop
+else (no)
+  :retire the failed token;
+  :CancelRequested for every other running task;
+  if (finished steps with an undo action?) then (no)
+    :CaseFailed;
+    stop
+  else (yes)
+    :levels := reverse happened-before order\n(x before y if x completed by the event that requested y);
+    repeat
+      :CompensateRequested for every step in the next level\n(independent undos in parallel);
+      :wait for every Compensated of this level;
+      if (an undo reports ok = false?) then (yes)
+        :NotificationRequested to manager;
+        :CaseFailed;
+        stop
+      endif
+    repeat while (levels left?) is (yes)
+    :CaseCompensated;
+    stop
+  endif
+endif
+@enduml

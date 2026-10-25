@@ -19,7 +19,7 @@ jobs:
       - name: Lint (ruff)
         run: ruff check packages services scripts tests && ruff format --check packages services scripts tests
       - name: Types (mypy)
-        run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml packages/care-events/src
+        run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer packages/care-events/src
       - name: Tests and coverage (NFR-MNT-01)
         run: python -m pytest --cov --cov-report=term
       - name: Complexity (NFR-MNT-02)

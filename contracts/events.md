@@ -41,6 +41,19 @@ a reply must carry the same value, and only the token waiting on exactly that id
 ### `TaskCompleted` / `TaskFailed` payload
 `{outputs: {...}, completed_by}` · `{reason, temporary: bool}`
 
+### Sprint 4 events (decision 0004)
+| Event | Producer → consumer | Payload |
+|-------|---------------------|---------|
+| `TaskReassigned` | engine → worklist | `task_id` (wait id), `role`, `level`, `due_at` |
+| `NotificationRequested` | engine → worklist | `role`, `message`, `case_id` |
+| `CancelRequested.<target>` | engine → worker | `task_id`, `node` |
+| `CompensateRequested.<target>` | engine → worker | `task_id` (`undo:<node>#n`), `node`, `action`, `label`, `role` |
+| `Compensated` | worker → engine | `ok` (false = the undo failed) |
+| `TimerScheduled` / `TimerFired` | engine internal (not published) | `kind` (deadline/retry/timer), `wait`, `due_at`, `level`/`attempt` |
+| `PathwayDeployed` | deployer → designer | `version_id`, `container`, `queue` |
+
+`TaskRequested` also carries `due_at` and the envelope's `attempt` (retries, ENG-07).
+
 ### `PatientRegistered` payload
 `patient_id` (record number), `age`, `sex`, `arrival_mode`, `chief_complaint`: no name or birth date.
 
@@ -86,5 +99,8 @@ All user requests go through the gateway, which checks the token and the role
 | `POST /conditions/check` | `{condition, variables}` → `{ok, errors: [{kind, message, pos}]}` |
 | `GET /patients?q=`, `POST /patients`, `GET /patients/{id}` | nurse, doctor (PAT-01) |
 | `GET /tasks`, `POST /tasks/{id}/claim`, `/release`, `/complete` | nurse, doctor; tasks of the caller's role (WRK-01) |
+
+| `GET /notifications` | clinical roles, manager, admin: alerts for the caller's role |
+| `POST /versions/{id}/deploy`, `GET /deployments` | deploy: admin only (NFR-SEC-03); list: designer, manager, admin |
 
 Engine (internal, per version): `GET /cases`, `GET /cases/{id}` (state and full history).

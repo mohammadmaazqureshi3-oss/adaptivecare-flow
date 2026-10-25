@@ -1,0 +1,25 @@
+@startuml U17_task_for_a_person_state
+!include style.iuml
+title U17 — Task for a person (state machine, Sprint 4) · worklist + engine
+
+[*] --> Open : TaskRequested.worklist\n/ due_at = request time + deadline
+Open --> Claimed : claim (same role)
+Claimed --> Open : release (by the claimant)
+Claimed --> Done : complete [outputs valid]\n/ TaskCompleted
+Open --> Open : TaskReassigned [level > current]\n/ role := next level, due_at reset
+Claimed --> Open : TaskReassigned [level > current]\n/ unclaimed, role := next level
+Open --> Cancelled : CancelRequested\nor case failed / compensated
+Claimed --> Cancelled : CancelRequested\nor case failed / compensated
+Done --> [*]
+Cancelled --> [*]
+note right of Open
+  Escalation (ENG-06), driven by engine timers:
+  deadline → level 1 role (e.g. charge_nurse);
+  each level's afterMin → next level;
+  after the last level → NotificationRequested to manager.
+end note
+note bottom of Done
+  Undo tasks (kind = undo, ENG-08) follow the same
+  states but answer Compensated instead of TaskCompleted.
+end note
+@enduml

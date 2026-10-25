@@ -16,7 +16,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type User, type VerificationError, type Version, type VersionSummary } from "../api";
+import { api, type Deployment, type User, type VerificationError, type Version, type VersionSummary } from "../api";
 import { EdgeInspector, NodeInspector } from "../editor/Inspector";
 import {
   defaultData,
@@ -69,7 +69,8 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
   // Bumped on every load: the canvas remounts, so React Flow measures the new nodes from scratch.
   const [canvasKey, setCanvasKey] = useState(0);
 
-  const readOnly = user.role !== "designer" || version?.status === "published";
+  const frozen = version?.status === "published" || version?.status === "deployed";
+  const readOnly = user.role !== "designer" || frozen;
 
   const show = useCallback((v: Version) => {
     const f = toFlow(v.model);
@@ -235,6 +236,21 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
 
   const publish = () => act(`Version ${version!.number} published. It can no longer change.`, () => api.publish(version!.id));
 
+  // DEP-01: admins deploy a published version as its own engine (separation of duties).
+  const [deployment, setDeployment] = useState<Deployment | null>(null);
+  useEffect(() => {
+    if (!version || user.role !== "admin") return;
+    api
+      .deployments(pathwayId)
+      .then((ds) => setDeployment(ds.find((d) => d.version_id === version.id) ?? null))
+      .catch(() => setDeployment(null));
+  }, [version, pathwayId, user.role]);
+  const deploy = () =>
+    act(`Version ${version!.number} deployed: its engine is running.`, async () => {
+      setDeployment(await api.deploy(version!.id));
+      return api.version(version!.id);
+    });
+
   const newDraft = () =>
     act("New draft created from the latest version.", async () => {
       const v = await api.newDraft(pathwayId);
@@ -321,7 +337,7 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
         <StatusBadge status={version.status} />
         {dirty && <span className="muted small">unsaved changes</span>}
         <span className="spacer" />
-        {user.role === "designer" && version.status !== "published" && (
+        {user.role === "designer" && !frozen && (
           <>
             <button onClick={save} disabled={busy || !dirty}>
               Save
@@ -339,7 +355,21 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
             </button>
           </>
         )}
-        {user.role === "designer" && latest?.status === "published" && (
+        {user.role === "admin" && frozen && (
+          <>
+            {deployment && (
+              <span className="muted small">
+                {deployment.status === "running" ? "engine running" : deployment.status} · <code>{deployment.queue}</code>
+              </span>
+            )}
+            {deployment?.status !== "running" && (
+              <button className="primary" onClick={deploy} disabled={busy}>
+                {busy ? "Deploying…" : "Deploy"}
+              </button>
+            )}
+          </>
+        )}
+        {user.role === "designer" && (latest?.status === "published" || latest?.status === "deployed") && (
           <button className="primary" onClick={newDraft} disabled={busy}>
             New draft (v{latest.number + 1})
           </button>
@@ -348,8 +378,8 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
       {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
       {readOnly && (
         <div className="notice info">
-          {version.status === "published"
-            ? "Published versions are immutable. Start a new draft to change this pathway."
+          {frozen
+            ? `${version.status === "deployed" ? "Deployed" : "Published"} versions are immutable. Start a new draft to change this pathway.`
             : "Read-only: only designers edit pathways."}
         </div>
       )}

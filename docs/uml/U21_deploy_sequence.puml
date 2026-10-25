@@ -1,0 +1,37 @@
+@startuml U21_deploy_sequence
+!include style.iuml
+title U21 — Deploy a version (sequence, Sprint 4; replaces 03)
+actor Admin
+participant "web editor" as web
+participant gateway
+participant deployer
+participant designer
+participant "Docker Engine API\n(or local runtime)" as docker
+participant "engine-triage-v1" as engine
+queue "care.events" as bus
+
+Admin -> web : Deploy
+web -> gateway : POST /versions/1/deploy
+gateway -> gateway : role = admin (NFR-SEC-03)
+gateway -> deployer : POST /versions/1/deploy
+deployer -> designer : GET /versions/1
+designer --> deployer : model, status = published
+deployer -> deployer : engine_config(): PIM → PSM\nname, queue engine.triage.v1,\nschema engine_triage_v1, env
+deployer -> deployer : CREATE SCHEMA engine_triage_v1
+deployer -> docker : create + start container
+docker -> engine : start (ENGINE_VERSION_ID=1)
+engine -> designer : GET /versions/1 (model)
+engine -> bus : declare queue engine.triage.v1,\nbind PatientRegistered, *.triage.v1
+loop every 0.2 s, at most 30 s
+  deployer -> engine : GET /health
+end
+engine --> deployer : 200
+deployer -> deployer : deployment running + outbox(PathwayDeployed)
+deployer ->> bus : PathwayDeployed
+bus ->> designer : version 1 → deployed
+deployer --> web : 200 running
+alt not healthy in 30 s
+  deployer -> docker : stop container
+  deployer --> web : 504, deployment failed
+end
+@enduml

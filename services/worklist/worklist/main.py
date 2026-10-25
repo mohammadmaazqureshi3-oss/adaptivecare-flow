@@ -5,11 +5,17 @@ It consumes ``TaskRequested.worklist``: each becomes a task for the role the des
 drew. Nurses and doctors see the open tasks for their role, claim one, and complete it
 with the outputs the pathway needs; the completion goes back to the engine as
 ``TaskCompleted`` through the outbox. A failed or finished case cancels its open tasks.
+
+Sprint 4: ``TaskReassigned`` moves an overdue task to the next role of the escalation
+chain (ENG-06); ``NotificationRequested`` becomes an alert for a role; ``CancelRequested``
+cancels a task; ``CompensateRequested`` creates an "Undo" task whose completion answers
+``Compensated`` (ENG-08).
 """
 
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated, Any
 
 from care_events import Bus, Event, OutboxRelay, add_to_outbox, first_time
@@ -19,7 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from worklist.db import Database, TaskRow, iso, make_engine, now
+from worklist.db import Database, NotificationRow, TaskRow, iso, make_engine, now
 
 
 class CompleteIn(BaseModel):
@@ -51,6 +57,9 @@ def task_out(t: TaskRow) -> dict[str, Any]:
         "inputs": t.inputs,
         "outputs": t.outputs,
         "deadline_min": t.deadline_min,
+        "due_at": iso(t.due_at),
+        "kind": t.kind,
+        "level": t.level,
         "status": t.status,
         "assignee": t.assignee,
         "result": t.result,
@@ -63,6 +72,17 @@ def task_out(t: TaskRow) -> dict[str, Any]:
 
 
 class Consumer:
+    BINDINGS = [
+        "TaskRequested.worklist",
+        "CompensateRequested.worklist",
+        "CancelRequested.worklist",
+        "TaskReassigned",
+        "NotificationRequested",
+        "CaseFailed",
+        "CaseCancelled",
+        "CaseCompensated",
+    ]
+
     def __init__(self, db: Database) -> None:
         self.db = db
 
@@ -70,12 +90,46 @@ class Consumer:
         with self.db.sessions.begin() as s:
             if not first_time(s, event.event_id):
                 return  # duplicate delivery
-            if event.type == "TaskRequested":
-                s.add(self._task_from(event))
-            elif event.type in ("CaseFailed", "CaseCancelled", "CaseCompensated"):
-                for t in s.scalars(select(TaskRow).where(TaskRow.case_id == event.case_id)):
-                    if t.status in ("open", "claimed"):
-                        t.status = "cancelled"
+            handler = {
+                "TaskRequested": self._requested,
+                "CompensateRequested": self._requested,
+                "TaskReassigned": self._reassigned,
+                "CancelRequested": self._cancel_task,
+                "NotificationRequested": self._notify,
+            }.get(event.type, self._case_ended)
+            handler(s, event)
+
+    def _requested(self, s: Session, e: Event) -> None:
+        s.add(self._task_from(e))
+
+    def _reassigned(self, s: Session, e: Event) -> None:
+        t = self._task_for(s, e)
+        if t is not None and t.status in ("open", "claimed") and e.payload.get("level", 0) > t.level:
+            t.role, t.level, t.status, t.assignee = e.payload["role"], e.payload["level"], "open", None
+            t.due_at = _parse(e.payload.get("due_at"))
+
+    def _cancel_task(self, s: Session, e: Event) -> None:
+        t = self._task_for(s, e)
+        if t is not None and t.status in ("open", "claimed"):
+            t.status = "cancelled"
+
+    def _notify(self, s: Session, e: Event) -> None:
+        p = e.payload
+        s.add(
+            NotificationRow(
+                event_id=e.event_id, role=p["role"], message=p["message"], case_id=e.case_id or ""
+            )
+        )
+
+    def _case_ended(self, s: Session, e: Event) -> None:
+        for t in s.scalars(select(TaskRow).where(TaskRow.case_id == e.case_id, TaskRow.kind == "task")):
+            if t.status in ("open", "claimed"):
+                t.status = "cancelled"
+
+    @staticmethod
+    def _task_for(s: Session, e: Event) -> TaskRow | None:
+        q = select(TaskRow).where(TaskRow.case_id == e.case_id, TaskRow.wait_id == e.payload.get("task_id"))
+        return s.scalars(q).first()
 
     @staticmethod
     def _task_from(e: Event) -> TaskRow:
@@ -85,6 +139,7 @@ class Consumer:
             request_event_id=e.event_id,
             request_json=e.to_json(),
             case_id=e.case_id or "",
+            wait_id=e.token_id or "",
             pathway=e.pathway or "",
             version=e.version or 0,
             node=p.get("node", ""),
@@ -94,7 +149,13 @@ class Consumer:
             inputs=p.get("inputs", {}),
             outputs=p.get("outputs", []),
             deadline_min=deadline.get("minutes"),
+            due_at=_parse(p.get("due_at")),
+            kind="undo" if e.type == "CompensateRequested" else "task",
         )
+
+
+def _parse(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 # ---- REST ---------------------------------------------------------------------------------
@@ -133,6 +194,24 @@ def list_tasks(s: SessionDep, email: Email, role: Role, include_done: bool = Fal
         wanted.append((TaskRow.status == "done") & mine)
     q = select(TaskRow).where(TaskRow.role == role, or_(*wanted)).order_by(TaskRow.created_at, TaskRow.id)
     return [task_out(t) for t in s.scalars(q)]
+
+
+@router.get("/notifications")
+def notifications(s: SessionDep, role: Role, limit: int = 50) -> list[dict[str, Any]]:
+    """Alerts for my role (escalations; for managers, tasks still open after every level)."""
+    q = select(NotificationRow).order_by(NotificationRow.id.desc()).limit(min(limit, 200))
+    if role != "admin":
+        q = q.where(NotificationRow.role == role)
+    return [
+        {
+            "id": n.id,
+            "role": n.role,
+            "message": n.message,
+            "case_id": n.case_id,
+            "created_at": iso(n.created_at),
+        }
+        for n in s.scalars(q)
+    ]
 
 
 @router.post("/tasks/{task_id}/claim")
@@ -174,7 +253,10 @@ def complete(
         )
     outputs = {o["name"]: body.outputs[o["name"]] for o in t.outputs}
     request_event = Event.from_json(t.request_json)
-    add_to_outbox(s, request_event.reply("TaskCompleted", {"outputs": outputs, "completed_by": email}))
+    if t.kind == "undo":  # a compensation step answers Compensated (ENG-08)
+        add_to_outbox(s, request_event.reply("Compensated", {"ok": True, "completed_by": email}))
+    else:
+        add_to_outbox(s, request_event.reply("TaskCompleted", {"outputs": outputs, "completed_by": email}))
     t.status, t.result, t.completed_at = "done", outputs, now()
     s.commit()
     request.app.state.relay.notify()
@@ -188,11 +270,7 @@ def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:
     the_bus: Bus = bus or RabbitBus(os.environ["AMQP_URL"])
     relay = OutboxRelay(database.sessions, the_bus)
     consumer = Consumer(database)
-    the_bus.subscribe(
-        "worklist",
-        ["TaskRequested.worklist", "CaseFailed", "CaseCancelled", "CaseCompensated"],
-        consumer.on_event,
-    )
+    the_bus.subscribe("worklist", Consumer.BINDINGS, consumer.on_event)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

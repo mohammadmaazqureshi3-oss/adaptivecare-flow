@@ -25,7 +25,7 @@ MAX_RETRY_DELAY_S = 3600
 @dataclass(frozen=True)
 class Escalation:
     role: str
-    after_min: float  # minutes after the deadline, or after the previous level
+    after_min: float  # how long this level has before the task escalates further
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class Deadline:
 
 @dataclass(frozen=True)
 class Retry:
-    max: int
+    max: int  # retries after the first attempt: max=2 means at most 3 attempts
     base_delay_s: float
 
     def delay(self, attempt: int) -> float:

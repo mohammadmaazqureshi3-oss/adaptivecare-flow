@@ -42,6 +42,7 @@ class TaskRow(Base):
     request_event_id: Mapped[str] = mapped_column(String(36), unique=True)
     request_json: Mapped[str] = mapped_column(Text)
     case_id: Mapped[str] = mapped_column(String(36), index=True)
+    wait_id: Mapped[str] = mapped_column(String(120), index=True, default="")  # the engine's wait id
     pathway: Mapped[str] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(Integer)
     node: Mapped[str] = mapped_column(String(64))
@@ -51,11 +52,27 @@ class TaskRow(Base):
     inputs: Mapped[dict[str, Any]] = mapped_column(JSON)
     outputs: Mapped[list[dict[str, str]]] = mapped_column(JSON)  # [{name, type}] required to complete
     deadline_min: Mapped[float | None] = mapped_column(nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(10), default="task")  # task | undo (a compensation step)
+    level: Mapped[int] = mapped_column(Integer, default=0)  # escalation level (ENG-06)
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | claimed | done | cancelled
     assignee: Mapped[str | None] = mapped_column(String(254), nullable=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationRow(Base):
+    """Escalation alerts and other messages for a role (email/SMS delivery is WRK-03)."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True)
+    role: Mapped[str] = mapped_column(String(40), index=True)
+    message: Mapped[str] = mapped_column(String(500))
+    case_id: Mapped[str] = mapped_column(String(36), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 def make_engine(url: str | None = None) -> Engine:

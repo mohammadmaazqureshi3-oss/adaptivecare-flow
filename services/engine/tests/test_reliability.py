@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from workers import FakeWorkers, answer, load
 
 TRIAGE = load("triage")
+T0 = "2026-10-25T10:00:00+00:00"
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def store(tmp_path: Path) -> Iterator[Store]:
 
 
 def registration(i: int) -> Event:
-    return Event("PatientRegistered", {"patient_id": f"P{i:06d}"}, event_id=f"reg-{i}", timestamp="t")
+    return Event("PatientRegistered", {"patient_id": f"P{i:06d}"}, event_id=f"reg-{i}", timestamp=T0)
 
 
 def run(store: Store, n: int, bus: InMemoryBus) -> EngineService:

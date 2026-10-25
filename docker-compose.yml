@@ -4,6 +4,8 @@
 # Engine containers are not listed: the deployer starts one per deployed pathway
 # version from Sprint 4 (plan Section 9). The image is built under the "engine" profile.
 
+name: adaptivecare  # fixes the network name engines join: adaptivecare_default
+
 x-service: &service
   restart: unless-stopped
   env_file: .env
@@ -63,7 +65,12 @@ services:
   deployer:
     <<: *service
     build: { context: ., dockerfile: services/deployer/Dockerfile }
-    # NFR-SEC-04: least privilege. Only the deployer may reach the Docker socket.
+    # NFR-SEC-04: least privilege. Only the deployer may reach the Docker socket, and it
+    # runs as root only because the socket belongs to root; no other service does.
+    user: "0"
+    environment:
+      ENGINE_IMAGE: adaptivecare/engine:dev
+      ENGINE_NETWORK: adaptivecare_default
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -80,14 +87,11 @@ services:
     build: { context: ., dockerfile: services/ml/Dockerfile }
 
   engine:
-    <<: *service
+    # Image only: the deployer starts one container per deployed version (DEP-01).
+    # Build it with: docker compose --profile engine build engine
     build: { context: ., dockerfile: services/engine/Dockerfile }
     image: adaptivecare/engine:dev
     profiles: ["engine"]
-    # Until the deployer (Sprint 4) starts one per version: ENGINE_VERSION_ID=<published version id>
-    environment:
-      ENGINE_VERSION_ID: ${ENGINE_VERSION_ID:-}
-      ENGINE_SCHEMA: ${ENGINE_SCHEMA:-engine_triage_v1}
 
   web:
     build: { context: ., dockerfile: web/Dockerfile }

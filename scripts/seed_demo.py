@@ -19,6 +19,7 @@ DEMO_USERS = [
     ("Nadia Nurse", "nurse@adaptivecare.test", "nurse-demo-1", "nurse"),
     ("Dev Doctor", "doctor@adaptivecare.test", "doctor-demo-1", "doctor"),
     ("Mia Manager", "manager@adaptivecare.test", "manager-demo-1", "manager"),
+    ("Cara Charge", "charge@adaptivecare.test", "charge-demo-1", "charge_nurse"),
 ]
 PATHWAYS = [("triage", "Emergency triage"), ("imaging_deadlock", "Imaging (has a deadlock)")]
 # Synthetic patients only (NFR-EXT-01).
@@ -56,6 +57,15 @@ def publish_triage(c: httpx.Client, designer: dict[str, str]) -> None:
     print(f"pathway triage: v{latest['number']} verified SAFE and published")
 
 
+def deploy_triage(c: httpx.Client, admin: dict[str, str]) -> None:
+    """Deploy the latest published Triage version (DEP-01), so registrations start cases."""
+    for v in reversed(c.get("/pathways/triage/versions", headers=admin).json()):
+        if v["status"] in ("published", "deployed"):
+            r = c.post(f"/versions/{v['id']}/deploy", headers=admin, timeout=60)
+            print(f"pathway triage: v{v['number']} {r.json().get('status', r.json().get('detail'))}")
+            return
+
+
 def main() -> None:
     with httpx.Client(base_url=GATEWAY, timeout=30) as c:
         admin = token(c, env("ADMIN_EMAIL"), env("ADMIN_PASSWORD"))
@@ -77,6 +87,7 @@ def main() -> None:
             c.put(f"/versions/{vid}", json={"model": model}, headers=designer).raise_for_status()
             print(f"pathway {pid}: loaded as draft v1")
         publish_triage(c, designer)
+        deploy_triage(c, admin)
         nurse = token(c, DEMO_USERS[1][1], DEMO_USERS[1][2])
         for name, dob, sex, mode, complaint in PATIENTS:
             body = {

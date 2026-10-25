@@ -4,8 +4,8 @@
 
 import type { PathwayModel } from "./editor/model";
 
-export type Role = "admin" | "designer" | "nurse" | "doctor" | "manager";
-export const ROLES: Role[] = ["admin", "designer", "nurse", "doctor", "manager"];
+export type Role = "admin" | "designer" | "nurse" | "charge_nurse" | "doctor" | "manager";
+export const ROLES: Role[] = ["admin", "designer", "nurse", "charge_nurse", "doctor", "manager"];
 
 export interface User {
   id: number;
@@ -19,7 +19,7 @@ export interface VersionSummary {
   id: number;
   pathway_id: string;
   number: number;
-  status: "draft" | "verified" | "published";
+  status: "draft" | "verified" | "published" | "deployed";
   author: string;
   updated_at: string;
   published_at: string | null;
@@ -91,6 +91,29 @@ export interface PatientIn {
   arrival_mode: ArrivalMode;
   chief_complaint: string;
   confirm_duplicate?: boolean;
+}
+
+export interface Notification {
+  id: number;
+  role: string;
+  message: string;
+  case_id: string;
+  created_at: string;
+}
+
+export interface Deployment {
+  id: number;
+  version_id: number;
+  pathway: string;
+  version: number;
+  container: string;
+  queue: string;
+  schema: string;
+  status: "starting" | "running" | "failed" | "stopped";
+  error: string;
+  requested_by: string;
+  started_at: string;
+  healthy_at: string | null;
 }
 
 export interface Task {
@@ -235,6 +258,10 @@ export const api = {
 
   searchPatients: (q: string) => request<Patient[]>("GET", `/patients?q=${encodeURIComponent(q)}`),
   registerPatient: (p: PatientIn) => request<Patient>("POST", "/patients", p),
+
+  notifications: () => request<Notification[]>("GET", "/notifications"),
+  deploy: (versionId: number) => request<Deployment>("POST", `/versions/${versionId}/deploy`),
+  deployments: (pathway: string) => request<Deployment[]>("GET", `/deployments?pathway=${encodeURIComponent(pathway)}`),
 
   tasks: (includeDone = false) => request<Task[]>("GET", `/tasks${includeDone ? "?include_done=true" : ""}`),
   claimTask: (id: number) => request<Task>("POST", `/tasks/${id}/claim`),

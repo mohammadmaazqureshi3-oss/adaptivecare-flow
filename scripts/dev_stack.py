@@ -4,11 +4,10 @@ All services share one in-memory bus (care_events.InMemoryBus) in place of Rabbi
 keep their data in SQLite files under .dev/. Ports match the services' Compose roles:
 
     gateway 8000 · auth 8001 · designer 8002 · verifier 8003 · patient 8004
-    worklist 8005 · ml 8006 · engines from 8010 (one per published pathway version)
+    worklist 8005 · ml 8006 · deployer 8007 · engines from 8010 (one per deployed version)
 
-Engines: until the Sprint 4 deployer exists, a watcher here starts an engine for the
-latest published version of each pathway (and keeps older ones running so their cases
-finish). This is a development stand-in, not DEP-01.
+Engines: the deployer (DEP-01) runs here with a local runtime, so pressing Deploy as an
+admin starts that version's engine inside this process instead of a Docker container.
 
 Usage: ./scripts/dev.sh   (sets PYTHONPATH and runs this file)
 """
@@ -36,6 +35,7 @@ PORTS = {
     "patient": 8004,
     "worklist": 8005,
     "ml": 8006,
+    "deployer": 8007,
 }
 log = logging.getLogger("dev_stack")
 
@@ -72,6 +72,10 @@ class Stack:
         from auth.db import Database as AuthDB
         from auth.db import make_engine as auth_engine
         from auth.main import create_app as auth_app
+        from deployer.db import Database as DeployerDB
+        from deployer.db import make_engine as deployer_engine
+        from deployer.main import create_app as deployer_app
+        from deployer.runtime import LocalRuntime
         from designer.db import Database as DesignerDB
         from designer.db import make_engine as designer_engine
         from designer.main import create_app as designer_app
@@ -87,9 +91,8 @@ class Stack:
 
         self.bus.start()
         self.serve("auth", auth_app(AuthDB(auth_engine(sqlite("auth")))), PORTS["auth"])
-        self.serve(
-            "designer", designer_app(DesignerDB(designer_engine(sqlite("designer")))), PORTS["designer"]
-        )
+        designer_db = DesignerDB(designer_engine(sqlite("designer")))
+        self.serve("designer", designer_app(designer_db, bus=self.bus), PORTS["designer"])
         self.serve("verifier", verifier_app, PORTS["verifier"])
         self.serve(
             "patient", patient_app(PatientDB(patient_engine(sqlite("patient"))), self.bus), PORTS["patient"]
@@ -101,34 +104,27 @@ class Stack:
         )
         self.serve("ml (placeholder)", ml_app(self.bus), PORTS["ml"])
         self.serve("gateway", gateway_app(), PORTS["gateway"])
+        runtime = LocalRuntime(self.start_engine)
+        deployer = deployer_app(DeployerDB(deployer_engine(sqlite("deployer"))), self.bus, runtime)
+        self.serve("deployer", deployer, PORTS["deployer"])
 
-    def start_engine(self, model: dict[str, Any]) -> None:
+    def start_engine(self, cfg: Any) -> str:
+        """LocalRuntime callback: run the engine for a deployment config in this process."""
         from engine.main import create_app as engine_app
         from engine.store import Store, make_engine
         from pathway_core import Pathway
 
-        pathway = Pathway.from_dict(model)
-        key = (pathway.id, pathway.version)
-        port = 8010 + len(self.engines)
-        self.engines[key] = port
-        store = Store(make_engine(sqlite(f"engine_{pathway.id}_v{pathway.version}")))
-        self.serve(f"engine {pathway.id} v{pathway.version}", engine_app(pathway, store, self.bus), port)
-
-    def watch_published(self) -> None:
-        """Dev stand-in for the deployer: run an engine for every newly published version."""
         designer = f"http://localhost:{PORTS['designer']}"
-        while True:
-            try:
-                for p in httpx.get(f"{designer}/pathways", timeout=5).json():
-                    for number in p["published_versions"]:
-                        if (p["id"], number) in self.engines:
-                            continue
-                        versions = httpx.get(f"{designer}/pathways/{p['id']}/versions", timeout=5).json()
-                        vid = next(v["id"] for v in versions if v["number"] == number)
-                        self.start_engine(httpx.get(f"{designer}/versions/{vid}", timeout=5).json()["model"])
-            except (httpx.HTTPError, StopIteration) as exc:
-                log.debug("watcher: %s", exc)
-            time.sleep(3)
+        model = httpx.get(f"{designer}/versions/{cfg.version_id}", timeout=5).json()["model"]
+        port = 8010 + len(self.engines)
+        self.engines[(cfg.pathway, cfg.version)] = port
+        store = Store(make_engine(sqlite(cfg.schema)))
+        self.serve(
+            f"engine {cfg.pathway} v{cfg.version}",
+            engine_app(Pathway.from_dict(model), store, self.bus),
+            port,
+        )
+        return f"http://localhost:{port}"
 
     def stop(self) -> None:
         for s in self.servers:
@@ -144,8 +140,7 @@ def main() -> None:
     env_defaults()
     stack = Stack()
     stack.start_services()
-    threading.Thread(target=stack.watch_published, name="engine-watcher", daemon=True).start()
-    log.info("Ready. Publish a pathway to get its engine. Ctrl-C stops everything.")
+    log.info("Ready. Deploy a published pathway (as admin) to start its engine. Ctrl-C stops everything.")
     try:
         while True:
             time.sleep(1)

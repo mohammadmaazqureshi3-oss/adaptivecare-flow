@@ -14,7 +14,7 @@ from typing import Any
 import bcrypt
 import jwt
 
-ROLES = ("admin", "designer", "nurse", "doctor", "manager")
+ROLES = ("admin", "designer", "nurse", "charge_nurse", "doctor", "manager")
 ACCESS_TTL = timedelta(minutes=15)
 REFRESH_TTL = timedelta(hours=8)
 ALGORITHM = "HS256"

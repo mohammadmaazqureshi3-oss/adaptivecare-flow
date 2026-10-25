@@ -138,3 +138,112 @@ def test_finished_tasks_can_be_listed(client: TestClient) -> None:
     assert [
         t["status"] for t in client.get("/tasks", params={"include_done": True}, headers=NURSE).json()
     ] == ["done"]
+
+
+# ---- Sprint 4: escalation, alerts, cancellation, undo tasks ----------------------------
+
+CHARGE = {"x-user-email": "cara@x.org", "x-user-role": "charge_nurse"}
+MANAGER = {"x-user-email": "mia@x.org", "x-user-role": "manager"}
+
+
+def test_eng06_reassigned_task_moves_to_the_next_role_and_is_reopened(client: TestClient) -> None:
+    deliver(client, request())
+    tid = client.get("/tasks", headers=NURSE).json()[0]["id"]
+    client.post(f"/tasks/{tid}/claim", headers=NURSE)
+    reassign = Event(
+        "TaskReassigned",
+        {
+            "task_id": "t0.1@vitals#1",
+            "role": "charge_nurse",
+            "level": 1,
+            "due_at": "2026-10-25T10:15:00+00:00",
+        },
+        case_id="case-1",
+    )
+    deliver(client, reassign)
+    deliver(client, reassign)  # duplicate
+    assert client.get("/tasks", headers=NURSE).json() == []
+    [task] = client.get("/tasks", headers=CHARGE).json()
+    assert (task["status"], task["assignee"], task["level"]) == ("open", None, 1)
+    assert task["due_at"].startswith("2026-10-25T10:15:00")
+
+
+def test_an_older_escalation_does_not_undo_a_newer_one(client: TestClient) -> None:
+    deliver(client, request())
+    for level, role in ((2, "manager"), (1, "charge_nurse")):  # arrive out of order
+        deliver(
+            client,
+            Event(
+                "TaskReassigned", {"task_id": "t0.1@vitals#1", "role": role, "level": level}, case_id="case-1"
+            ),
+        )
+    assert client.get("/tasks", headers=MANAGER).json()[0]["level"] == 2
+
+
+def test_notifications_are_listed_for_their_role(client: TestClient) -> None:
+    deliver(
+        client, Event("NotificationRequested", {"role": "manager", "message": "still open"}, case_id="case-1")
+    )
+    deliver(
+        client,
+        Event("NotificationRequested", {"role": "charge_nurse", "message": "yours now"}, case_id="case-1"),
+    )
+    assert [n["message"] for n in client.get("/notifications", headers=MANAGER).json()] == ["still open"]
+    admin = {"x-user-email": "a@x.org", "x-user-role": "admin"}
+    assert len(client.get("/notifications", headers=admin).json()) == 2
+
+
+def test_cancel_requested_cancels_the_task(client: TestClient) -> None:
+    deliver(client, request())
+    deliver(
+        client, Event("CancelRequested", {"task_id": "t0.1@vitals#1"}, case_id="case-1", target="worklist")
+    )
+    assert client.get("/tasks", headers=NURSE).json() == []
+
+
+def test_eng08_undo_task_answers_compensated(client: TestClient, db: Database) -> None:
+    undo = Event(
+        "CompensateRequested",
+        {
+            "task_id": "undo:bed#7",
+            "node": "bed",
+            "action": "ReleaseBed",
+            "label": "Undo: Reserve bed",
+            "role": "nurse",
+            "patient_id": "P000001",
+            "outputs": [],
+            "inputs": {},
+        },
+        event_id="undo-1",
+        case_id="case-1",
+        token_id="undo:bed#7",
+        pathway="visit",
+        version=1,
+        target="worklist",
+    )
+    deliver(client, undo)
+    [task] = client.get("/tasks", headers=NURSE).json()
+    assert task["kind"] == "undo" and task["label"] == "Undo: Reserve bed"
+    client.post(f"/tasks/{task['id']}/claim", headers=NURSE)
+    assert (
+        client.post(f"/tasks/{task['id']}/complete", json={"outputs": {}}, headers=NURSE).status_code == 200
+    )
+    with db.sessions() as s:
+        reply = Event.from_json(s.scalars(select(OutboxRow)).one().event_json)
+    assert reply.type == "Compensated" and reply.routing_key == "Compensated.visit.v1"
+    assert reply.token_id == "undo:bed#7" and reply.payload["ok"] is True
+
+
+def test_compensation_does_not_cancel_its_own_undo_tasks(client: TestClient) -> None:
+    deliver(
+        client,
+        Event(
+            "CompensateRequested",
+            {"task_id": "undo:x#1", "role": "nurse", "label": "Undo"},
+            case_id="case-1",
+            token_id="undo:x#1",
+            target="worklist",
+        ),
+    )
+    deliver(client, Event("CaseCompensated", {}, case_id="case-1"))
+    assert [t["kind"] for t in client.get("/tasks", headers=NURSE).json()] == ["undo"]

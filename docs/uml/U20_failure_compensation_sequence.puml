@@ -1,0 +1,40 @@
+@startuml U20_failure_compensation_sequence
+!include style.iuml
+title U20 — Failure and compensation (sequence, Sprint 4; ENG-08 acceptance scenario)
+participant "engine.visit.v1" as engine
+queue "care.events" as bus
+participant BedService as bed
+participant Lab as lab
+participant Transport as tr
+database "timers" as timers
+
+engine ->> bus : TaskRequested.BedService
+bus ->> bed
+bed ->> bus : TaskCompleted (bed reserved)
+bus ->> engine : record DoneStep(bed, undo=ReleaseBed)
+engine ->> bus : TaskRequested.Lab
+bus ->> lab
+lab ->> bus : TaskCompleted (lab ordered)
+bus ->> engine : record DoneStep(lab, undo=CancelLabOrder)
+engine ->> bus : TaskRequested.Transport
+bus ->> tr
+tr ->> bus : TaskFailed (temporary)
+bus ->> engine
+engine -> timers : retry due in 1 s (ENG-07)
+timers -> engine : TimerFired → TaskRequested (attempt 2)
+tr ->> bus : TaskFailed (permanent)
+bus ->> engine : no fallback → compensate
+engine ->> bus : CompensateRequested.Lab (level 1: happened last)
+bus ->> lab
+lab ->> bus : Compensated (ok)
+bus ->> engine
+engine ->> bus : CompensateRequested.BedService (level 2)
+bus ->> bed
+bed ->> bus : Compensated (ok)
+bus ->> engine
+engine ->> bus : CaseCompensated
+note over engine
+  Every arrow into the engine goes through on_event:
+  case lock, duplicate filter, one transaction (I1, I2, I5).
+end note
+@enduml
