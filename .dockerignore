@@ -6,4 +6,6 @@
 **/tests
 docs
 web/node_modules
+web/dist
+.dev
 .env

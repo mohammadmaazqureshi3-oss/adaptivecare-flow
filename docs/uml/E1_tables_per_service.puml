@@ -1,0 +1,56 @@
+@startuml E1_tables_per_service
+!include style.iuml
+title E1 — Tables per service (ER, Sprint 1: auth and designer)
+hide circle
+skinparam linetype ortho
+
+package "schema auth" {
+  entity users {
+    * id : int <<PK>>
+    --
+    name : varchar(120)
+    email : varchar(254) <<unique>>
+    password_hash : varchar(100)  <i>bcrypt</i>
+    role : admin|designer|nurse|doctor|manager
+    active : bool
+    created_at : timestamptz
+  }
+  entity login_log {
+    * id : int <<PK>>
+    --
+    user_id : int <<FK, nullable>>
+    email : varchar(254)
+    success : bool
+    at : timestamptz
+  }
+}
+package "schema designer" {
+  entity pathways {
+    * id : varchar(64) <<PK>>
+    --
+    name : varchar(200)
+    created_by : varchar(254)
+    created_at : timestamptz
+  }
+  entity versions {
+    * id : int <<PK>>
+    --
+    pathway_id : varchar(64) <<FK>>
+    number : int
+    status : draft|verified|published
+    model : json
+    report : json <<nullable>>
+    author : varchar(254)
+    updated_at : timestamptz
+    published_at : timestamptz <<nullable>>
+    <<unique (pathway_id, number)>>
+  }
+}
+users ||--o{ login_log
+pathways ||--|{ versions
+note bottom of versions
+  Rows with status = published are never updated (DES-05).
+  author / created_by hold the email the gateway passes;
+  no cross-schema foreign keys (database per service).
+end note
+@enduml

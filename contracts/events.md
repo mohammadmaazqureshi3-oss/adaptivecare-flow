@@ -43,3 +43,21 @@ their change, so delivery is at least once and duplicates are filtered by `event
 states_explored, search_complete, elapsed_ms}`. Each error has `type`, `property`,
 `nodes`, `message`, `path` (list of `{node, consumed, produced}` moves), and for
 condition errors `edge` and `pos`.
+
+## REST: auth, gateway and designer (Sprint 1, decision 0002)
+
+All user requests go through the gateway, which checks the token and the role
+(`services/gateway/gateway/permissions.py`) and adds `X-User-Id`, `X-User-Email`, `X-User-Role`.
+
+| Endpoint | Body → result |
+|----------|---------------|
+| `POST /auth/login` | `{email, password}` → `{access_token, refresh_token, token_type, user}` |
+| `POST /auth/refresh` | `{refresh_token}` → `{access_token, token_type}` |
+| `GET /auth/me` | → `user` |
+| `GET/POST /users`, `PATCH /users/{id}` | admin only; users are deactivated, never deleted |
+| `GET/POST /pathways`, `GET/PATCH /pathways/{id}` | `{id, name}`; a new pathway starts as draft v1 (Start → End) |
+| `GET/POST /pathways/{id}/versions` | POST starts the next draft from the latest published version |
+| `GET/PUT /versions/{id}` | PUT `{model}` saves a draft; 409 on a published version |
+| `POST /versions/{id}/verify` | runs the verifier; status becomes `verified` only if SAFE |
+| `POST /versions/{id}/publish` | needs status `verified`; the version becomes immutable |
+| `POST /conditions/check` | `{condition, variables}` → `{ok, errors: [{kind, message, pos}]}` |

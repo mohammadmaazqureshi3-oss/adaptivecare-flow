@@ -1,0 +1,89 @@
+@startuml U04_pathway_model_class
+!include style.iuml
+title U04 — Pathway model (class, Sprint 1) · pathway_core.model / tokens
+hide empty members
+
+class Pathway <<frozen>> {
+  id: str
+  version: int
+  name: str
+  --
+  node(id): Node
+  incoming(id): list[Edge]
+  outgoing(id): list[Edge]
+  var_types: dict[str, str]
+  start_inputs: frozenset[str]
+  {static} from_dict(doc): Pathway
+  to_dict(): dict
+}
+class Variable <<frozen>> {
+  name: str
+  type: int | float | bool | string
+}
+class Node <<frozen>> {
+  id: str
+  type: NodeType
+  label: str
+  kind: human | service | ml
+  role: str
+  service: str
+  inputs: tuple[str]
+  outputs: tuple[str]
+  trigger: str
+  minutes: float
+  fallback: str
+  settings: dict  <i>(deadline, escalation,\n retry, undo, duration, x, y)</i>
+  --
+  reads: frozenset[str]
+  writes: frozenset[str]
+}
+class Edge <<frozen>> {
+  id: str
+  source: str
+  target: str
+  condition: str
+  default: bool
+  prob: float
+  fallback: bool
+}
+enum NodeType {
+  start
+  task
+  xor_split
+  xor_merge
+  and_split
+  and_join
+  timer
+  end
+}
+class TokenGraph {
+  initial_marking(): Marking
+  enabled_moves(m): list[Move]
+  fire(m, move): Marking
+  is_complete(m): bool
+  replay(path): Marking
+}
+class Move <<frozen>> {
+  node: str
+  consumed: tuple[str]
+  produced: tuple[str]
+}
+note right of TokenGraph
+  The eight token rules (plan Section 5).
+  Marking = tuple[int, ...], one count per edge.
+  Used by verifier, simulator and engine.
+end note
+note bottom of Edge
+  A task's fallback is stored on the Node and
+  normalised into one extra Edge(fallback=True).
+end note
+
+Pathway "1" *-- "*" Variable
+Pathway "1" *-- "1..*" Node
+Pathway "1" *-- "*" Edge
+Node --> NodeType
+Edge "*" --> "1" Node : source
+Edge "*" --> "1" Node : target
+TokenGraph --> Pathway
+TokenGraph ..> Move : creates
+@enduml

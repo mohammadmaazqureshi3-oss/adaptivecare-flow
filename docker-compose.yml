@@ -86,9 +86,8 @@ services:
     profiles: ["engine"]
 
   web:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./web/public:/usr/share/nginx/html:ro
+    build: { context: ., dockerfile: web/Dockerfile }
+    depends_on: [gateway]
     ports: ["8080:80"]
 
 volumes:

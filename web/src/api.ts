@@ -1,0 +1,187 @@
+// Every request goes through the gateway at /api (proxied by Vite in development and
+// nginx in Compose). The access token lives in memory only; the refresh token is kept in
+// sessionStorage so a page reload does not log the user out, and is gone when the tab closes.
+
+import type { PathwayModel } from "./editor/model";
+
+export type Role = "admin" | "designer" | "nurse" | "doctor" | "manager";
+export const ROLES: Role[] = ["admin", "designer", "nurse", "doctor", "manager"];
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  active: boolean;
+}
+
+export interface VersionSummary {
+  id: number;
+  pathway_id: string;
+  number: number;
+  status: "draft" | "verified" | "published";
+  author: string;
+  updated_at: string;
+  published_at: string | null;
+  report_status: "SAFE" | "UNSAFE" | "TOO_LARGE" | null;
+}
+
+export interface Move {
+  node: string;
+  consumed: string[];
+  produced: string[];
+}
+
+export interface VerificationError {
+  type: string;
+  property: string;
+  nodes: string[];
+  message: string;
+  path: Move[];
+  edge?: string;
+  pos?: number;
+}
+
+export interface Report {
+  status: "SAFE" | "UNSAFE" | "TOO_LARGE";
+  errors: VerificationError[];
+  states_explored: number;
+  search_complete: boolean;
+  elapsed_ms: number;
+}
+
+export interface Version extends VersionSummary {
+  model: PathwayModel;
+  report: Report | null;
+}
+
+export interface PathwaySummary {
+  id: string;
+  name: string;
+  created_by: string;
+  latest_version: VersionSummary | null;
+  published_versions: number[];
+}
+
+export interface ConditionCheck {
+  ok: boolean;
+  errors: { kind: "syntax" | "type"; message: string; pos: number }[];
+}
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const REFRESH_KEY = "adaptivecare.refresh";
+let accessToken: string | null = null;
+let onLoggedOut: () => void = () => {};
+
+export function setLoggedOutHandler(fn: () => void): void {
+  onLoggedOut = fn;
+}
+
+function readRefresh(): string | null {
+  try {
+    return sessionStorage.getItem(REFRESH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeRefresh(token: string | null): void {
+  try {
+    if (token) sessionStorage.setItem(REFRESH_KEY, token);
+    else sessionStorage.removeItem(REFRESH_KEY);
+  } catch {
+    /* storage blocked: the session simply ends with the page */
+  }
+}
+
+async function refreshAccess(): Promise<boolean> {
+  const refresh_token = readRefresh();
+  if (!refresh_token) return false;
+  const r = await fetch("/api/auth/refresh", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refresh_token }),
+  });
+  if (!r.ok) {
+    writeRefresh(null);
+    return false;
+  }
+  accessToken = (await r.json()).access_token;
+  return true;
+}
+
+async function request<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["content-type"] = "application/json";
+  if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+  const r = await fetch(`/api${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (r.status === 401 && retry && (await refreshAccess())) {
+    return request<T>(method, path, body, false);
+  }
+  if (r.status === 401) {
+    accessToken = null;
+    onLoggedOut();
+  }
+  if (!r.ok) {
+    let message = `${r.status} ${r.statusText}`;
+    try {
+      const detail = (await r.json()).detail;
+      message = typeof detail === "string" ? detail : detail.map((d: { msg: string }) => d.msg).join("; ");
+    } catch {
+      /* keep the status text */
+    }
+    throw new ApiError(r.status, message);
+  }
+  return (await r.json()) as T;
+}
+
+export const api = {
+  async login(email: string, password: string): Promise<User> {
+    const body = await request<{ access_token: string; refresh_token: string; user: User }>(
+      "POST",
+      "/auth/login",
+      { email, password },
+      false,
+    );
+    accessToken = body.access_token;
+    writeRefresh(body.refresh_token);
+    return body.user;
+  },
+  async resume(): Promise<User | null> {
+    if (!(await refreshAccess())) return null;
+    return request<User>("GET", "/auth/me");
+  },
+  logout(): void {
+    accessToken = null;
+    writeRefresh(null);
+  },
+
+  users: () => request<User[]>("GET", "/users"),
+  createUser: (u: { name: string; email: string; password: string; role: Role }) =>
+    request<User>("POST", "/users", u),
+  updateUser: (id: number, patch: Partial<Pick<User, "name" | "role" | "active">> & { password?: string }) =>
+    request<User>("PATCH", `/users/${id}`, patch),
+
+  pathways: () => request<PathwaySummary[]>("GET", "/pathways"),
+  createPathway: (id: string, name: string) => request<PathwaySummary>("POST", "/pathways", { id, name }),
+  versions: (pathwayId: string) => request<VersionSummary[]>("GET", `/pathways/${pathwayId}/versions`),
+  newDraft: (pathwayId: string) => request<Version>("POST", `/pathways/${pathwayId}/versions`),
+  version: (id: number) => request<Version>("GET", `/versions/${id}`),
+  saveVersion: (id: number, model: PathwayModel) => request<Version>("PUT", `/versions/${id}`, { model }),
+  verify: (id: number) => request<Version>("POST", `/versions/${id}/verify`),
+  publish: (id: number) => request<Version>("POST", `/versions/${id}/publish`),
+  checkCondition: (condition: string, variables: PathwayModel["variables"]) =>
+    request<ConditionCheck>("POST", "/conditions/check", { condition, variables }),
+};

@@ -1,0 +1,61 @@
+@startuml U05_condition_language_class
+!include style.iuml
+title U05 — Condition language (class, Sprint 1) · pathway_core.conditions
+hide empty members
+
+class Lexer <<module>> {
+  tokenize(source): list[Token]
+}
+class Token <<frozen>> {
+  kind: str
+  text: str
+  pos: int
+}
+class Parser <<recursive descent>> {
+  parse(source): Expr
+  -expr() / and_expr() / not_expr()
+  -cmp() / value() / literal()
+}
+abstract class Expr
+class Literal { value: int | float | str | bool }
+class Name { id: str }
+class BoolOp { op: and | or }
+class Not
+class Compare { op: < <= > >= == != }
+class InList { items: tuple[Literal] }
+class TypeChecker <<module>> {
+  typecheck(expr, var_types): list[TypeIssue]
+}
+class Evaluator <<module>> {
+  evaluate(expr, data): Value
+}
+class ConditionSyntaxError { message: str\npos: int }
+class TypeIssue { message: str\npos: int }
+
+Expr <|-- Literal
+Expr <|-- Name
+Expr <|-- BoolOp
+Expr <|-- Not
+Expr <|-- Compare
+Expr <|-- InList
+BoolOp o-- "2" Expr
+Not o-- "1" Expr
+Compare o-- "2" Expr
+InList o-- "1" Expr
+InList o-- "1..*" Literal
+Lexer ..> Token
+Parser ..> Lexer
+Parser ..> Expr : builds
+Parser ..> ConditionSyntaxError : raises
+TypeChecker ..> Expr
+TypeChecker ..> TypeIssue
+Evaluator ..> Expr
+note bottom of TypeChecker
+  Verifier (VER-05) and designer
+  POST /conditions/check (DES-03)
+end note
+note bottom of Evaluator
+  Engine (live data) and
+  Simulator (sampled data)
+end note
+@enduml
