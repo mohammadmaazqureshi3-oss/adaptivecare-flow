@@ -1,0 +1,89 @@
+@startuml U18_engine_class
+!include style.iuml
+title U18 — Engine (class, Sprint 3) · services/engine and packages/care-events
+hide empty members
+
+package engine {
+  class Case {
+    pathway: Pathway
+    id: str
+    status: new|running|completed|failed|...
+    data: dict
+    tokens: dict[str, Token]
+    history: list[Step]
+    joins_fired: dict[str, int]
+    waits: int
+    apply(event): list[Event]
+    state(): dict
+    -_start / _task_completed / _task_failed / _timer
+    -_advance / _step / _decide / _merge / _split / _join / _wait / _end
+    -_request / _send / _fail
+  }
+  class Token {
+    id: str
+    edge: str
+    node: str
+    state: moving|parked|waiting|cancelled
+    wait: str
+  }
+  class Step {
+    direction: in|out
+    type, event_id, detail, at
+  }
+  class EngineService {
+    pathway: Pathway
+    cache: dict[str, Case]
+    queue_name / bindings / trigger
+    on_event(event)
+    case_id_for(event)
+    load(case_id): Case
+    -_replay(session, case_id): Case
+  }
+  class Store {
+    sessions
+  }
+  class CaseEventRow <<table case_events>> {
+    seq, event_id <<unique>>, case_id, event_json
+  }
+  class CaseRow <<table cases>> {
+    id, patient_id, status
+  }
+}
+package care_events {
+  class Event {
+    event_id, type, case_id, token_id,
+    pathway, version, attempt, timestamp,
+    target, payload
+    routing_key
+    reply(type, payload): Event
+  }
+  interface Bus {
+    publish(event)
+    subscribe(queue, bindings, handler)
+  }
+  class InMemoryBus
+  class RabbitBus
+  class OutboxRelay {
+    flush() / start() / notify()
+  }
+  class OutboxRow <<table outbox>>
+}
+package pathway_core {
+  class Pathway
+  class "conditions" as cond <<module>>
+}
+Case *-- Token
+Case *-- Step
+Case --> Pathway
+Case ..> cond : parse / evaluate
+Case ..> Event : creates
+EngineService --> Case : cache, replay
+EngineService --> Store
+Store --> CaseEventRow
+Store --> CaseRow
+Store --> OutboxRow
+EngineService --> OutboxRelay
+OutboxRelay --> Bus
+Bus <|.. InMemoryBus
+Bus <|.. RabbitBus
+@enduml

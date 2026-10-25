@@ -104,3 +104,23 @@ def test_search_limit_and_missing_patient(client: TestClient) -> None:
 )
 def test_age_boundaries(dob: date, today: date, expected: int) -> None:
     assert age(dob, today) == expected
+
+
+def test_eng01_registration_queues_patient_registered_without_the_name(client: TestClient) -> None:
+    from care_events import Event, OutboxRow
+    from sqlalchemy import select
+
+    p = register(client, chief_complaint="chest pain")
+    db = client.app.state.db  # type: ignore[attr-defined]
+    with db.sessions() as s:
+        [row] = s.scalars(select(OutboxRow)).all()
+    event = Event.from_json(row.event_json)
+    assert event.type == "PatientRegistered" and event.routing_key == "PatientRegistered"
+    assert event.payload == {
+        "patient_id": p["mrn"],
+        "age": p["age"],
+        "sex": "female",
+        "arrival_mode": "walk_in",
+        "chief_complaint": "chest pain",
+    }
+    assert "Lovelace" not in row.event_json and "1985" not in row.event_json

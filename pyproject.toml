@@ -2,13 +2,13 @@
 # dependencies; this file only configures the shared quality gates (NFR-MNT-01/02).
 
 [tool.pytest.ini_options]
-testpaths = ["packages/pathway-core/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests", "services/patient/tests"]
-pythonpath = ["packages/pathway-core/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer", "services/patient"]
+testpaths = ["packages/pathway-core/tests", "packages/care-events/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests", "services/patient/tests", "services/engine/tests", "services/worklist/tests", "tests/system"]
+pythonpath = ["packages/pathway-core/src", "packages/care-events/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer", "services/patient", "services/engine", "services/engine/tests", "services/worklist", "services/ml"]
 addopts = "-q --import-mode=importlib"
 
 [tool.coverage.run]
 branch = true
-source = ["pathway_core", "verifier", "auth", "gateway", "designer", "patient"]
+source = ["pathway_core", "care_events", "verifier", "auth", "gateway", "designer", "patient", "engine", "worklist", "ml"]
 
 [tool.coverage.report]
 fail_under = 80
@@ -31,6 +31,10 @@ max-complexity = 10
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = "packages/pathway-core/src:services/verifier:services/auth:services/gateway:services/designer:services/patient"
+mypy_path = "packages/pathway-core/src:packages/care-events/src:services/verifier:services/auth:services/gateway:services/designer:services/patient:services/engine:services/worklist:services/ml"
 explicit_package_bases = true
 exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["pika", "pika.*"]  # pika ships without type information
+ignore_missing_imports = true

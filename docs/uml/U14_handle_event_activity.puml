@@ -1,0 +1,39 @@
+@startuml U14_handle_event_activity
+!include style.iuml
+title U14 — Handle an incoming event (activity, Sprint 3) · EngineService.on_event
+
+start
+:event arrives on engine.<pathway>.v<version>;
+if (event is the start trigger?) then (yes)
+  :case_id := uuid5(pathway, version, event_id);
+else (no)
+  :case_id := event.case_id;
+endif
+:acquire the case's lock (I2);
+:BEGIN transaction;
+if (event_id already in case_events?) then (yes)
+  :ignore (I1);
+else (no)
+  if (case in memory?) then (yes)
+  else (no)
+    :replay the case's stored events (I3);
+  endif
+  if (case not started and event is not the trigger?) then (yes)
+    :ignore (unknown case);
+  else (no)
+    :outbound := case.apply(event)\n(token rules, pure, deterministic ids);
+    :INSERT case_events(event);
+    :INSERT outbox(outbound);
+    :UPSERT cases summary;
+  endif
+endif
+:COMMIT (I5) and release the lock;
+:acknowledge the message;
+:notify the outbox relay → publish;
+stop
+note right
+  An exception before COMMIT rolls everything back,
+  drops the in-memory case and lets the broker
+  redeliver: nothing is half-applied.
+end note
+@enduml

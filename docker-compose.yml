@@ -84,6 +84,10 @@ services:
     build: { context: ., dockerfile: services/engine/Dockerfile }
     image: adaptivecare/engine:dev
     profiles: ["engine"]
+    # Until the deployer (Sprint 4) starts one per version: ENGINE_VERSION_ID=<published version id>
+    environment:
+      ENGINE_VERSION_ID: ${ENGINE_VERSION_ID:-}
+      ENGINE_SCHEMA: ${ENGINE_SCHEMA:-engine_triage_v1}
 
   web:
     build: { context: ., dockerfile: web/Dockerfile }

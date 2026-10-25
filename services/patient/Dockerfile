@@ -2,6 +2,8 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY services/patient/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY packages/care-events /tmp/care-events
+RUN pip install --no-cache-dir /tmp/care-events
 COPY services/patient/patient ./patient
 USER nobody
 EXPOSE 8000

@@ -1,0 +1,39 @@
+@startuml U13_case_across_services_sequence
+!include style.iuml
+title U13 — One case across the services (sequence, Sprint 3)
+actor Nurse
+participant gateway
+participant patient
+queue "care.events" as bus
+participant "engine.triage.v1" as engine
+participant ml
+participant worklist
+
+Nurse -> gateway : POST /patients
+gateway -> patient : POST /patients
+patient -> patient : save patient + outbox(PatientRegistered)\nin ONE transaction
+patient --> Nurse : 201 P000004
+patient ->> bus : relay: PatientRegistered
+bus ->> engine : PatientRegistered (trigger matches)
+engine -> engine : on_event: lock case, dedupe,\ncase.apply → start, split
+engine -> engine : store event + outbox(CaseStarted,\nTaskRequested×2) in ONE transaction
+engine ->> bus : TaskRequested.PredictUrgency
+engine ->> bus : TaskRequested.worklist (vitals)
+bus ->> ml : PredictUrgency
+ml ->> bus : TaskFailed.triage.v1 (model not trained yet)
+bus ->> engine : TaskFailed → fallback to manual triage
+engine ->> bus : TaskRequested.worklist (manual triage)
+bus ->> worklist : tasks for role nurse
+Nurse -> gateway : POST /tasks/{id}/claim, /complete {outputs}
+gateway -> worklist
+worklist -> worklist : task done + outbox(TaskCompleted)
+worklist ->> bus : TaskCompleted.triage.v1
+bus ->> engine : TaskCompleted × 2 → join fires once (I2)
+engine -> engine : decision on live data:\nurgency ≤ 2 or spo2 < 90 or confidence < 0.7
+engine ->> bus : TaskRequested.worklist (confirm)
+note over bus
+  At-least-once delivery: every consumer filters
+  duplicates by event_id (I1) and acknowledges
+  only after committing.
+end note
+@enduml

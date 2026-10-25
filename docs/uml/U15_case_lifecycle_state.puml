@@ -1,0 +1,22 @@
+@startuml U15_case_lifecycle_state
+!include style.iuml
+title U15 — Case lifecycle (state machine, Sprint 3; update of 05, Migrating removed)
+
+[*] --> New
+New --> Running : start trigger\n/ CaseStarted, first tokens
+New --> Failed : start inputs missing
+Running --> Running : task replies, decisions,\nsplits and joins
+Running --> Completed : End fires and no token is left\n/ CaseCompleted
+Running --> Failed : task failed for good, no fallback\nor a decision cannot be evaluated\n/ CaseFailed, cancel tokens
+Running --> Compensated : failure with undo actions\n(Sprint 4, ENG-08)
+Running --> Cancelled : cancelled by staff (Sprint 4)
+Completed --> [*]
+Failed --> [*]
+Compensated --> [*]
+Cancelled --> [*]
+note right of Completed
+  I4: every case ends in exactly one
+  of the four final states; later
+  messages are recorded and ignored.
+end note
+@enduml

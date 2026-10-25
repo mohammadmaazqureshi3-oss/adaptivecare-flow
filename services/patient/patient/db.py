@@ -11,6 +11,7 @@ import os
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 
+from care_events import OutboxBase
 from sqlalchemy import Date, DateTime, Integer, String, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -58,7 +59,7 @@ def make_engine(url: str | None = None) -> Engine:
         return create_engine(url, connect_args={"options": f"-csearch_path={SCHEMA}"})
     if url == "sqlite://":  # in-memory, shared by every session (tests)
         return create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    return create_engine(url, connect_args={"check_same_thread": False})
+    return create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
 
 
 class Database:
@@ -66,6 +67,7 @@ class Database:
         self.engine = engine
         self.sessions = sessionmaker(engine, expire_on_commit=False)
         Base.metadata.create_all(engine)
+        OutboxBase.metadata.create_all(engine)
 
     def session(self) -> Iterator[Session]:
         with self.sessions() as s:

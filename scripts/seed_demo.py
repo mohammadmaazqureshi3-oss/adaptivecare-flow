@@ -42,6 +42,20 @@ def token(c: httpx.Client, email: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def publish_triage(c: httpx.Client, designer: dict[str, str]) -> None:
+    """Verify and publish Triage if its latest version is a draft, so an engine can run it."""
+    latest = c.get("/pathways/triage/versions", headers=designer).json()[-1]
+    if latest["status"] == "published":
+        print(f"pathway triage: v{latest['number']} already published")
+        return
+    report = c.post(f"/versions/{latest['id']}/verify", headers=designer).json()["report"]
+    if report["status"] != "SAFE":
+        print(f"pathway triage: not published, Verify says {report['status']}")
+        return
+    c.post(f"/versions/{latest['id']}/publish", headers=designer).raise_for_status()
+    print(f"pathway triage: v{latest['number']} verified SAFE and published")
+
+
 def main() -> None:
     with httpx.Client(base_url=GATEWAY, timeout=30) as c:
         admin = token(c, env("ADMIN_EMAIL"), env("ADMIN_PASSWORD"))
@@ -62,6 +76,7 @@ def main() -> None:
             model = json.loads((ROOT / "pathways" / f"{pid}.json").read_text())
             c.put(f"/versions/{vid}", json={"model": model}, headers=designer).raise_for_status()
             print(f"pathway {pid}: loaded as draft v1")
+        publish_triage(c, designer)
         nurse = token(c, DEMO_USERS[1][1], DEMO_USERS[1][2])
         for name, dob, sex, mode, complaint in PATIENTS:
             body = {

@@ -199,3 +199,15 @@ button.danger-solid { background: var(--bad); border-color: var(--bad); color: #
 .notice-inline { padding: 0.5rem 0.8rem; border-radius: 8px; font-size: 0.88rem; }
 .notice-inline.info { background: var(--ok-bg); color: var(--ok); }
 .notice-inline.error { background: var(--bad-bg); color: var(--bad); }
+
+/* ---- tasks (WRK-01) ---- */
+.task { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.8rem 1rem; }
+.task.claimed { border-color: #9db6e8; }
+.task-head { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.task-inputs { display: flex; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+.complete-form { display: flex; gap: 0.8rem; align-items: end; flex-wrap: wrap; }
+.complete-form label:not(.check) { min-width: 140px; }
+.complete-form label span { font-size: 0.8rem; }
+.due { font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: #eef0f3; }
+.due.soon { background: var(--warn-bg); color: var(--warn); }
+.due.overdue { background: var(--bad-bg); color: var(--bad); }

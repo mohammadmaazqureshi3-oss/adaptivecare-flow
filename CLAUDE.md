@@ -28,8 +28,8 @@ This file is under version control and is part of the AI tooling architecture
 
 ## Commands
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e packages/pathway-core -r requirements-dev.txt
+python3 -m venv .venv && .venv/bin/pip install -e packages/pathway-core -e packages/care-events -r requirements-dev.txt
 .venv/bin/python -m pytest --cov
-.venv/bin/ruff check packages services && .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient
+.venv/bin/ruff check packages services && .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml packages/care-events/src
 cp .env.example .env && docker compose up --build
 ```

@@ -19,7 +19,30 @@ their change, so delivery is at least once and duplicates are filtered by `event
 | `version`   | int             | Pathway version                                 |
 | `attempt`   | int             | Delivery attempt, for retries with backoff      |
 | `timestamp` | ISO 8601 (UTC)  | When the producer created it                    |
+| `target`    | string or null  | Requests only: the service a request is for     |
 | `payload`   | object          | Type-specific, below                            |
+
+## Routing keys and ids (decision 0003)
+
+| Kind       | Routing key                         | Example                    | Bound by                  |
+|------------|-------------------------------------|----------------------------|---------------------------|
+| Request    | `<Type>.<target>`                   | `TaskRequested.worklist`   | the target service        |
+| Reply      | `<Type>.<pathway>.v<version>`       | `TaskCompleted.triage.v1`  | that engine: `*.triage.v1`|
+| Broadcast  | `<Type>`                            | `PatientRegistered`        | engines whose trigger matches, worklist |
+
+Derived events have deterministic ids (uuid5), so a duplicate input produces duplicate ids
+and consumers drop the copy. A task request's `token_id` is its *wait id* (`t0.1@vitals#2`);
+a reply must carry the same value, and only the token waiting on exactly that id accepts it.
+
+### `TaskRequested` payload
+`task_id` (= wait id), `node`, `label`, `kind` (human/service/ml), `role`, `service`,
+`inputs` {name: value}, `outputs` [{name, type}] the reply must contain, `deadline`, `patient_id`.
+
+### `TaskCompleted` / `TaskFailed` payload
+`{outputs: {...}, completed_by}` · `{reason, temporary: bool}`
+
+### `PatientRegistered` payload
+`patient_id` (record number), `age`, `sex`, `arrival_mode`, `chief_complaint`: no name or birth date.
 
 ## Catalog
 
@@ -61,3 +84,7 @@ All user requests go through the gateway, which checks the token and the role
 | `POST /versions/{id}/verify` | runs the verifier; status becomes `verified` only if SAFE |
 | `POST /versions/{id}/publish` | needs status `verified`; the version becomes immutable |
 | `POST /conditions/check` | `{condition, variables}` → `{ok, errors: [{kind, message, pos}]}` |
+| `GET /patients?q=`, `POST /patients`, `GET /patients/{id}` | nurse, doctor (PAT-01) |
+| `GET /tasks`, `POST /tasks/{id}/claim`, `/release`, `/complete` | nurse, doctor; tasks of the caller's role (WRK-01) |
+
+Engine (internal, per version): `GET /cases`, `GET /cases/{id}` (state and full history).

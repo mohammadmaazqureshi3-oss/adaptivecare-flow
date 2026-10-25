@@ -2,15 +2,20 @@
 
 Feature IDs: C1-02. Nurses and doctors register and search patients through the
 gateway, which has already checked their role and passes their identity in
-``X-User-Email``. Publishing ``PatientRegistered`` so that a case starts is ENG-01
-(Sprint 3), added with the transactional outbox.
+``X-User-Email``. Each registration also publishes ``PatientRegistered`` through the
+outbox, in the same transaction, which starts a case on every deployed pathway whose
+trigger matches (ENG-01). The event carries the record number, not the name.
 """
 
+import os
 import re
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
+from care_events import Bus, Event, OutboxRelay, add_to_outbox
+from care_events.rabbit import RabbitBus
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -69,6 +74,20 @@ def patient_out(p: PatientRow) -> dict[str, Any]:
     }
 
 
+def registered_event(p: PatientRow) -> Event:
+    """ENG-01 trigger. Minimum necessary data: no name or birth date leaves this service."""
+    return Event(
+        "PatientRegistered",
+        {
+            "patient_id": p.mrn,
+            "age": age(p.date_of_birth),
+            "sex": p.sex,
+            "arrival_mode": p.arrival_mode,
+            "chief_complaint": p.chief_complaint,
+        },
+    )
+
+
 router = APIRouter()
 
 
@@ -87,7 +106,7 @@ def health() -> dict[str, str]:
 
 
 @router.post("/patients", status_code=status.HTTP_201_CREATED)
-def register(body: PatientIn, s: SessionDep, author: Author = "unknown") -> dict[str, Any]:
+def register(body: PatientIn, request: Request, s: SessionDep, author: Author = "unknown") -> dict[str, Any]:
     """PAT-01: register a patient. The same name and birth date needs an explicit confirmation."""
     key = body.name.lower()
     same = s.scalars(
@@ -111,7 +130,11 @@ def register(body: PatientIn, s: SessionDep, author: Author = "unknown") -> dict
         registered_by=author,
     )
     s.add(p)
+    s.flush()  # assigns the id, so the event can carry the record number
+    add_to_outbox(s, registered_event(p))
     s.commit()
+    if relay := request.app.state.relay:
+        relay.notify()
     return patient_out(p)
 
 
@@ -138,9 +161,29 @@ def read(patient_id: int, s: SessionDep) -> dict[str, Any]:
     return patient_out(p)
 
 
-def create_app(db: Database | None = None) -> FastAPI:
-    """Build the service; tests pass an in-memory database."""
-    app = FastAPI(title="AdaptiveCare patient", version="0.2.0")
-    app.state.db = db or Database(make_engine())
+def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:
+    """Build the service; tests pass an in-memory database and, when they need events, a bus.
+
+    Without a bus or ``AMQP_URL`` the events wait in the outbox until one is configured.
+    """
+    database = db or Database(make_engine())
+    owns_bus = bus is None
+    the_bus: Bus | None = bus or (RabbitBus(os.environ["AMQP_URL"]) if os.environ.get("AMQP_URL") else None)
+    relay = OutboxRelay(database.sessions, the_bus) if the_bus else None
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if relay:
+            relay.start()
+        if owns_bus and the_bus:
+            the_bus.start()
+        yield
+        if owns_bus and the_bus:
+            the_bus.stop()
+        if relay:
+            relay.stop()
+
+    app = FastAPI(title="AdaptiveCare patient", version="0.3.0", lifespan=lifespan)
+    app.state.db, app.state.relay = database, relay
     app.include_router(router)
     return app

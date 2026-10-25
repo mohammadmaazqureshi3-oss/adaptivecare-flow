@@ -93,6 +93,25 @@ export interface PatientIn {
   confirm_duplicate?: boolean;
 }
 
+export interface Task {
+  id: number;
+  case_id: string;
+  pathway: string;
+  version: number;
+  node: string;
+  label: string;
+  role: string;
+  patient_id: string;
+  inputs: Record<string, unknown>;
+  outputs: { name: string; type: "int" | "float" | "bool" | "string" }[];
+  deadline_min: number | null;
+  status: "open" | "claimed" | "done" | "cancelled";
+  assignee: string | null;
+  result: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -216,4 +235,10 @@ export const api = {
 
   searchPatients: (q: string) => request<Patient[]>("GET", `/patients?q=${encodeURIComponent(q)}`),
   registerPatient: (p: PatientIn) => request<Patient>("POST", "/patients", p),
+
+  tasks: (includeDone = false) => request<Task[]>("GET", `/tasks${includeDone ? "?include_done=true" : ""}`),
+  claimTask: (id: number) => request<Task>("POST", `/tasks/${id}/claim`),
+  releaseTask: (id: number) => request<Task>("POST", `/tasks/${id}/release`),
+  completeTask: (id: number, outputs: Record<string, unknown>) =>
+    request<Task>("POST", `/tasks/${id}/complete`, { outputs }),
 };
