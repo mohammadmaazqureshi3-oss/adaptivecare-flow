@@ -24,7 +24,7 @@ The deployer runs there with a local runtime: pressing Deploy (as admin) starts 
 engine in the same process instead of a Docker container.
 
 ```bash
-./scripts/dev.sh                          # gateway :8000 … ml :8006, deployer :8007, engines :8010+
+./scripts/dev.sh                          # gateway :8000 … deployer :8007, simulator :8008, engines :8010+
 .venv/bin/python scripts/seed_demo.py     # demo users, pathways (Triage published and deployed), patients
 npm --prefix web install && npm --prefix web run dev   # editor on http://localhost:5173
 ```
@@ -40,7 +40,7 @@ python3 -m venv .venv
 .venv/bin/ruff check packages services
 .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient \
   services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer \
-  packages/care-events/src
+  services/simulator/simulator packages/care-events/src
 npm --prefix web test && npm --prefix web run typecheck
 ```
 
@@ -69,14 +69,14 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | `services/engine/` | **Algorithm 2** — token interpreter, event store, replay, snapshots, timers, retries, escalation, compensation |
 | `services/worklist/` | Tasks for people: claim and complete with required outputs (WRK-01) |
 | `services/ml/` | Placeholder until Sprint 6: answers `PredictUrgency` with a permanent failure |
-| `services/deployer/` | Deploy: PIM → PSM, start the engine, health check, `PathwayDeployed` (DEP-01) |
-| `services/simulator/` | Service skeleton (Sprint 0) |
+| `services/deployer/` | Deploy: PIM → PSM, start the engine, health check (DEP-01); undeploy with draining (DEP-02) |
+| `services/simulator/` | **Algorithm 3** — discrete-event simulation, 95% intervals, Staffing Advisor, Erlang C validation |
 | `tests/system/` | In-process system test: patient → engine → ml → worklist |
 | `web/` | React + React Flow pathway editor and admin pages |
 | `scripts/` | `dev.sh` (run without Docker), `seed_demo.py` (demo users and pathways) |
 | `pathways/` | `triage.json` (SAFE), `imaging_deadlock.json` (the worked example, UNSAFE), `imaging_fixed.json` |
 | `contracts/events.md` | Event envelope and catalog, REST contract |
-| `docs/uml/` | PlantUML diagrams (U01–U21, U31, U32, E1) |
+| `docs/uml/` | PlantUML diagrams (U01–U25, U31, U32, E1) |
 | `docs/ai-log/` | Prompt log per sprint (requirement P21) |
 | `docs/daily/` | Daily scrum notes |
 | `CLAUDE.md` | Rules file for AI tools |
@@ -90,4 +90,5 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | 2 | Algorithm 1: Verifier | Done: Verifier, counterexample replay (NFR-USE-01), task settings (DES-04), patients (PAT-01), UML U07–U12 |
 | 3 | Algorithm 2: Engine core | Done: ENG-01..05, WRK-01, fault-injection and replay tests; RabbitMQ run pending (Docker) |
 | 4 | Algorithm 2 reliability and Deploy | Done: ENG-06..09, DEP-01; Docker runtime and RabbitMQ not yet run (Docker) |
-| 5–7 | Simulator, ML, clinical pathways, hardening | Not started |
+| 5 | Algorithm 3: Simulator and Advisor | Done: SIM-01..04, DES-06, DEP-02; Erlang C 92/100, NFR-PERF-03 5 s |
+| 6–7 | ML and the three clinical pathways, hardening | Not started |

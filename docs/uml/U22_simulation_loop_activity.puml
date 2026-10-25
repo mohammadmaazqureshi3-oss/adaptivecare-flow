@@ -1,0 +1,36 @@
+@startuml U22_simulation_loop_activity
+!include style.iuml
+title U22 — Simulation loop (activity, Sprint 5) · Replication.run
+
+start
+:t := 0; FEL := {first arrival by thinning};\nstaff pools per role with priority queues (urgency, arrival);
+while (FEL not empty and next event < horizon?) is (yes)
+  :(t, event) := FEL.pop()  (ties: insertion order);
+  if (arrival?) then (yes)
+    :new virtual case: urgency sampled from the mix;
+    :advance(case);
+    :push next arrival:\ncandidate at peak rate, kept with p = rate(t)/peak;
+  else (task end)
+    if (human task?) then (yes)
+      :free the staff member;
+      if (queue not empty?) then (yes)
+        :start the most urgent waiting task; record its wait;
+      endif
+    endif
+    :record deadline met / missed;
+    :put the token on the next arrow; advance(case);
+  endif
+endwhile
+:metrics after warm-up: waits, utilisation and queue (time-weighted),\ndeadline misses, target shares, length of stay, patients in system;
+stop
+
+partition "advance(case) — the Engine's token rules (pathway-core TokenGraph)" {
+  note right
+    instant moves (decision, merge, splits, join, end) fire at once;
+    a decision evaluates its conditions when they read only sampled data
+    (urgency), otherwise draws a branch by its probability (DES-06);
+    a task or timer takes its token now and schedules its end:
+    human → staff pool (start now or queue), service/ML → sampled duration.
+  end note
+}
+@enduml

@@ -26,7 +26,8 @@ from sqlalchemy.orm import Session
 from designer.db import Database, PathwayRow, VersionRow, iso, make_engine, now
 
 VerifyFn = Callable[[dict[str, Any]], dict[str, Any]]
-FROZEN = frozenset({"published", "deployed"})  # immutable from Publish on (DES-05)
+FROZEN = frozenset({"published", "deployed", "draining", "retired"})  # immutable from Publish on (DES-05)
+NEXT_STATUS = {"PathwayDeployed": "deployed", "PathwayDraining": "draining", "PathwayRetired": "retired"}
 
 
 class PathwayIn(BaseModel):
@@ -261,16 +262,21 @@ def condition_check(body: ConditionIn) -> dict[str, Any]:
 
 
 class DeploymentListener:
-    """``PathwayDeployed`` from the deployer moves a published version to Deployed (U07)."""
+    """The deployer's events move a version along U07: Deployed → Draining → Retired."""
+
+    ORDER = ("published", "deployed", "draining", "retired")
 
     def __init__(self, db: Database) -> None:
         self.db = db
 
     def on_event(self, event: Event) -> None:
+        target = NEXT_STATUS.get(event.type)
         with self.db.sessions.begin() as s:
             v = s.get(VersionRow, event.payload.get("version_id"))
-            if v is not None and v.status == "published":
-                v.status = "deployed"
+            # Only forward: a late PathwayDeployed never undoes a retirement.
+            if v is not None and target and v.status in self.ORDER:
+                if self.ORDER.index(target) > self.ORDER.index(v.status):
+                    v.status = target
 
 
 def create_app(
@@ -281,7 +287,7 @@ def create_app(
     owns_bus = bus is None
     the_bus: Bus | None = bus or (RabbitBus(os.environ["AMQP_URL"]) if os.environ.get("AMQP_URL") else None)
     if the_bus:
-        the_bus.subscribe("designer", ["PathwayDeployed"], DeploymentListener(database).on_event)
+        the_bus.subscribe("designer", list(NEXT_STATUS), DeploymentListener(database).on_event)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

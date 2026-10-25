@@ -66,6 +66,15 @@ class SnapshotRow(Base):
     state_json: Mapped[str] = mapped_column(Text)
 
 
+class StateRow(Base):
+    """Engine-wide settings that survive restarts, e.g. draining = "1" (DEP-02)."""
+
+    __tablename__ = "engine_state"
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200))
+
+
 def make_engine(url: str | None = None, schema: str | None = None) -> Engine:
     url = url or os.environ.get("DATABASE_URL", "sqlite:///./engine.db")
     if url.startswith("postgresql://"):

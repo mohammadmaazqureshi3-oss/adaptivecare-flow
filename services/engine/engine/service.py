@@ -20,11 +20,11 @@ from typing import Any
 
 from care_events import Event, OutboxRelay, add_to_outbox, derived_id
 from pathway_core import Pathway
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from engine.case import Case
-from engine.store import CaseEventRow, CaseRow, SnapshotRow, Store, TimerRow, now
+from engine.store import CaseEventRow, CaseRow, SnapshotRow, StateRow, Store, TimerRow, now
 
 log = logging.getLogger("engine")
 SNAPSHOT_EVERY = 50
@@ -39,6 +39,9 @@ class EngineService:
         self._locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
         self._locks_guard = threading.Lock()
         self.trigger = Case(pathway, "probe").trigger
+        with store.sessions() as s:
+            flag = s.get(StateRow, "draining")
+        self.draining = flag is not None and flag.value == "1"
 
     @property
     def queue_name(self) -> str:
@@ -61,7 +64,28 @@ class EngineService:
 
     # ---- the algorithm ---------------------------------------------------------------
 
+    def drain(self) -> None:
+        """DEP-02: stop taking new cases; the ones running carry on to their end."""
+        with self.store.sessions.begin() as s:
+            s.merge(StateRow(key="draining", value="1"))
+        self.draining = True
+
+    def running_cases(self) -> int:
+        with self.store.sessions() as s:
+            q = (
+                select(func.count())
+                .select_from(CaseRow)
+                .where(CaseRow.status.in_(("running", "compensating")))
+            )
+            return int(s.scalar(q) or 0)
+
+    def _is_trigger(self, event: Event) -> bool:
+        return self.trigger is not None and event.type == self.trigger
+
     def on_event(self, event: Event) -> None:
+        if self.draining and self._is_trigger(event):
+            log.info("draining: not starting a new case for %s", event.event_id)  # DEP-02
+            return
         case_id = self.case_id_for(event)
         if case_id is None:
             log.warning("dropping %s without a case id", event.type)
@@ -71,7 +95,7 @@ class EngineService:
                 if s.scalar(select(CaseEventRow.seq).where(CaseEventRow.event_id == event.event_id)):
                     return  # duplicate (I1)
                 case = self.cache.get(case_id) or self._load(s, case_id)
-                if case.status == "new" and (self.trigger is None or event.type != self.trigger):
+                if case.status == "new" and not self._is_trigger(event):
                     log.info("ignoring %s for unknown case %s", event.type, case_id)
                     return
                 try:

@@ -52,9 +52,14 @@ RULES: tuple[Rule, ...] = (
     Rule("POST", "/versions/{id}/verify", "designer", DESIGNER),
     Rule("POST", "/versions/{id}/publish", "designer", DESIGNER),
     Rule("POST", "/conditions/check", "designer", DESIGNER),
+    # simulator: designers and managers run and view simulations (SIM-01..03)
+    Rule("POST", "/versions/{id}/simulations", "simulator", frozenset({"designer", "manager"})),
+    Rule("GET", "/simulations", "simulator", frozenset({"designer", "manager"})),
+    Rule("GET", "/simulations/{id}", "simulator", frozenset({"designer", "manager"})),
     # deployer: only admins deploy (NFR-SEC-03, separation of duties)
     Rule("POST", "/versions/{id}/deploy", "deployer", ADMIN),
     Rule("GET", "/deployments", "deployer", PATHWAY_READERS),
+    Rule("DELETE", "/deployments/{id}", "deployer", ADMIN),
     # patient: register and search (PAT-01)
     Rule("GET", "/patients", "patient", CLINICAL),
     Rule("POST", "/patients", "patient", CLINICAL),

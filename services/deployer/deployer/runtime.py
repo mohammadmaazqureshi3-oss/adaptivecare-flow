@@ -25,6 +25,8 @@ class Runtime(Protocol):
 
     def stop(self, cfg: EngineConfig) -> None: ...
 
+    def url(self, cfg: EngineConfig) -> str | None: ...
+
 
 class DockerRuntime:
     def __init__(self, network: str, socket: str = "/var/run/docker.sock") -> None:
@@ -58,12 +60,19 @@ class DockerRuntime:
         self.docker.post(f"/containers/{cfg.name}/stop")
         self.docker.delete(f"/containers/{cfg.name}")
 
+    def url(self, cfg: EngineConfig) -> str | None:
+        return f"http://{cfg.name}:{cfg.port}"
+
 
 class LocalRuntime:
     """Runs engines in this process (dev stack). ``start_engine`` returns the engine's base URL."""
 
-    def __init__(self, start_engine: Callable[[EngineConfig], str]) -> None:
-        self.start_engine = start_engine
+    def __init__(
+        self,
+        start_engine: Callable[[EngineConfig], str],
+        stop_engine: Callable[[EngineConfig], None] | None = None,
+    ) -> None:
+        self.start_engine, self.stop_engine = start_engine, stop_engine
         self.urls: dict[str, str] = {}
 
     def start(self, cfg: EngineConfig) -> None:
@@ -80,4 +89,8 @@ class LocalRuntime:
             return False
 
     def stop(self, cfg: EngineConfig) -> None:
-        self.urls.pop(cfg.name, None)  # DEP-02 (Sprint 5) drains before stopping
+        if self.urls.pop(cfg.name, None) is not None and self.stop_engine:
+            self.stop_engine(cfg)
+
+    def url(self, cfg: EngineConfig) -> str | None:
+        return self.urls.get(cfg.name)

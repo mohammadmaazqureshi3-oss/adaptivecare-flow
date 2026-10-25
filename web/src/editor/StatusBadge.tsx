@@ -3,6 +3,8 @@ const TEXT: Record<string, string> = {
   verified: "Verified",
   published: "Published",
   deployed: "Deployed",
+  draining: "Draining",
+  retired: "Retired",
   SAFE: "SAFE",
   UNSAFE: "UNSAFE",
   TOO_LARGE: "Too large",

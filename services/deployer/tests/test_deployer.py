@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from care_events import Event, InMemoryBus, OutboxRow
 from deployer.db import Database, make_engine
@@ -37,6 +38,9 @@ class FakeRuntime:
 
     def stop(self, cfg: EngineConfig) -> None:
         self.stopped.append(cfg.name)
+
+    def url(self, cfg: EngineConfig) -> str | None:
+        return f"http://{cfg.name}:8000"
 
 
 @pytest.fixture
@@ -124,3 +128,53 @@ def test_restart_brings_running_deployments_back(db: Database) -> None:
     with client_with(db, after_restart):
         pass
     assert [c.name for c in after_restart.started] == ["engine-triage-v3"]
+
+
+# ---- DEP-02: undeploy drains, then retires --------------------------------------------
+
+
+class FakeEngine:
+    """Answers /drain and /health like an engine with ``running`` cases left."""
+
+    def __init__(self, running: int) -> None:
+        self.running, self.drained = running, False
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/drain":
+            self.drained = True
+            return httpx.Response(200, json={"draining": True})
+        return httpx.Response(
+            200, json={"status": "ok", "running_cases": self.running, "draining": self.drained}
+        )
+
+
+def test_dep02_undeploy_drains_and_retires_when_the_last_case_ends(db: Database) -> None:
+    engine, runtime = FakeEngine(running=2), FakeRuntime()
+    http = httpx.Client(transport=httpx.MockTransport(engine.handler))
+    app = create_app(db, InMemoryBus(), runtime, fetch_version=lambda vid: VERSIONS[vid], engine_http=http)
+    with TestClient(app) as client:
+        dep = client.post("/versions/1/deploy", headers=ADMIN).json()
+        r = client.delete(f"/deployments/{dep['id']}")
+        assert r.status_code == 200 and r.json()["status"] == "draining" and engine.drained
+        assert runtime.stopped == []  # two cases still running: the engine stays up
+        engine.running = 0
+        assert app.state.deployer.check_draining() == 1
+        assert runtime.stopped == ["engine-triage-v3"]
+        assert client.get("/deployments").json()[0]["status"] == "retired"
+        assert client.delete(f"/deployments/{dep['id']}").json()["status"] == "retired"  # idempotent
+    with db.sessions() as s:
+        kinds = [
+            Event.from_json(r.event_json).type for r in s.scalars(select(OutboxRow).order_by(OutboxRow.id))
+        ]
+    assert kinds == ["PathwayDeployed", "PathwayDraining", "PathwayRetired"]
+
+
+def test_an_idle_engine_retires_at_once(db: Database) -> None:
+    engine, runtime = FakeEngine(running=0), FakeRuntime()
+    http = httpx.Client(transport=httpx.MockTransport(engine.handler))
+    with TestClient(
+        create_app(db, InMemoryBus(), runtime, fetch_version=lambda vid: VERSIONS[vid], engine_http=http)
+    ) as c:
+        dep = c.post("/versions/1/deploy", headers=ADMIN).json()
+        assert c.delete(f"/deployments/{dep['id']}").json()["status"] == "retired"
+        assert c.delete("/deployments/999").status_code == 404

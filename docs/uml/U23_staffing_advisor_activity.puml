@@ -1,0 +1,29 @@
+@startuml U23_staffing_advisor_activity
+!include style.iuml
+title U23 — Staffing Advisor (activity, Sprint 5) · advisor.advise
+
+start
+:staff := 1 per role;
+repeat
+  :res := 10 replications (common random numbers);
+  if (every target met at the upper end of its 95% interval?) then (yes)
+    :re-run adaptively for the report;
+    :recommend staff, cost;
+    stop
+  endif
+  :for each role r: try staff + 1 in r → shortfall reduction / cost(r);
+  if (any reduction > 0?) then (yes)
+    :best := role with the largest reduction per cost;
+  else (no)
+    :best := busiest role (bottleneck);
+  endif
+  :staff[best] += 1;
+repeat while (cost(staff) ≤ budget?) is (yes)
+:no staffing within the budget meets every target;
+stop
+note right
+  Greedy heuristic: a good staffing, not a proven optimum.
+  Measured on the two-role test case: greedy = exhaustive
+  optimum (3 nurses, 4 doctors, cost 13), gap 0.
+end note
+@enduml

@@ -51,6 +51,7 @@ a reply must carry the same value, and only the token waiting on exactly that id
 | `Compensated` | worker → engine | `ok` (false = the undo failed) |
 | `TimerScheduled` / `TimerFired` | engine internal (not published) | `kind` (deadline/retry/timer), `wait`, `due_at`, `level`/`attempt` |
 | `PathwayDeployed` | deployer → designer | `version_id`, `container`, `queue` |
+| `PathwayDraining`, `PathwayRetired` | deployer → designer | `version_id`, `container` (DEP-02) |
 
 `TaskRequested` also carries `due_at` and the envelope's `attempt` (retries, ENG-07).
 
@@ -103,4 +104,9 @@ All user requests go through the gateway, which checks the token and the role
 | `GET /notifications` | clinical roles, manager, admin: alerts for the caller's role |
 | `POST /versions/{id}/deploy`, `GET /deployments` | deploy: admin only (NFR-SEC-03); list: designer, manager, admin |
 
-Engine (internal, per version): `GET /cases`, `GET /cases/{id}` (state and full history).
+| `DELETE /deployments/{id}` | admin: undeploy, drain then retire (DEP-02) |
+| `POST /versions/{id}/simulations` | designer, manager: `{scenario, advise, budget}` → 202 job (SIM-01..03) |
+| `GET /simulations/{job}`, `GET /simulations?version_id=` | designer, manager: status and result (means, 95% intervals, advice) |
+
+Engine (internal, per version): `GET /cases`, `GET /cases/{id}`, `GET /health` (with `running_cases`,
+`draining`), `POST /drain` (deployer only).

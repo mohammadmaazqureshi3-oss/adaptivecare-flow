@@ -5,6 +5,7 @@ import { Editor } from "./pages/Editor";
 import { Login } from "./pages/Login";
 import { PathwayList } from "./pages/PathwayList";
 import { Patients } from "./pages/Patients";
+import { Simulate } from "./pages/Simulate";
 import { Tasks } from "./pages/Tasks";
 import { Users } from "./pages/Users";
 
@@ -42,7 +43,7 @@ export function App() {
 
   const canSeePathways = PATHWAY_ROLES.includes(user.role);
   const clinical = CLINICAL_ROLES.includes(user.role);
-  const [section = canSeePathways ? "pathways" : clinical ? "tasks" : "home", id] = route;
+  const [section = canSeePathways ? "pathways" : clinical ? "tasks" : "home", id, sub] = route;
 
   return (
     <div className="app">
@@ -91,7 +92,8 @@ export function App() {
       </header>
       <main className="content">
         {section === "pathways" && canSeePathways && !id && <PathwayList user={user} onOpen={(pid) => go(`/pathways/${pid}`)} />}
-        {section === "pathways" && canSeePathways && id && <Editor key={id} pathwayId={id} user={user} />}
+        {section === "pathways" && canSeePathways && id && sub !== "simulate" && <Editor key={id} pathwayId={id} user={user} />}
+        {section === "pathways" && canSeePathways && id && sub === "simulate" && <Simulate key={id} pathwayId={id} user={user} />}
         {section === "users" && user.role === "admin" && <Users me={user} />}
         {section === "patients" && clinical && <Patients />}
         {section === "tasks" && clinical && <Tasks user={user} />}

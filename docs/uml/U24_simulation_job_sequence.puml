@@ -1,0 +1,33 @@
+@startuml U24_simulation_job_sequence
+!include style.iuml
+title U24 — Simulation job (sequence, Sprint 5)
+actor "Designer / Manager" as user
+participant "web: Simulate" as web
+participant gateway
+participant simulator
+participant designer
+participant "worker thread" as worker
+database "simulator schema" as db
+
+user -> web : scenario, targets, (advice + budget)
+web -> gateway : POST /versions/1/simulations
+gateway -> simulator : role designer or manager
+simulator -> designer : GET /versions/1
+designer --> simulator : model
+simulator -> simulator : readiness check (DES-06)
+alt not ready
+  simulator --> web : 422 + list of issues
+else ready
+  simulator -> db : job queued (scenario stored, C1-06)
+  simulator -> worker : submit
+  simulator --> web : 202 job id
+  worker -> worker : replicate (adaptive, 10..100)\nor advise (greedy rounds)
+  worker -> db : result (means, 95% intervals)
+  loop every 0.8 s until done
+    web -> gateway : GET /simulations/{job}
+    gateway -> simulator
+    simulator --> web : status, result
+  end
+  web -> user : tables with intervals,\ntargets met / missed, advice
+end
+@enduml

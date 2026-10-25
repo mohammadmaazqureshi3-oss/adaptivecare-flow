@@ -8,12 +8,15 @@ Deploy, as plan Section 9 describes:
 2. generate the engine's container configuration from the model (PIM → PSM);
 3. create its database schema, start the container, wait for its health check (≤ 30 s);
 4. record the deployment and publish ``PathwayDeployed``.
-Undeploy with draining is DEP-02 (Sprint 5).
+Undeploy (DEP-02): the engine is told to drain (no new cases; running ones finish),
+the version becomes Draining; a watcher stops the engine once no case is running, and the
+version becomes Retired (``PathwayDraining``, ``PathwayRetired``).
 """
 
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
@@ -72,9 +75,11 @@ class Deployer:
         fetch_version: FetchVersion,
         image: str,
         health_timeout_s: float = HEALTH_TIMEOUT_S,
+        engine_http: httpx.Client | None = None,
     ) -> None:
         self.db, self.runtime, self.fetch_version = db, runtime, fetch_version
         self.image, self.health_timeout_s = image, health_timeout_s
+        self.http = engine_http or httpx.Client(timeout=10)  # for talking to engines (drain, health)
         self.relay: OutboxRelay | None = None
 
     def deploy(self, version_id: int, requested_by: str) -> DeploymentRow:
@@ -104,6 +109,71 @@ class Deployer:
             self._finish(row.id, "failed", error=str(exc)[:500])
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, f"deploy failed: {exc}") from exc
         return self._finish(row.id, "running", cfg=cfg)
+
+    def undeploy(self, deployment_id: int) -> DeploymentRow:
+        """DEP-02: drain, then retire when the last running case has finished."""
+        with self.db.sessions() as s:
+            row = s.get(DeploymentRow, deployment_id)
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
+        if row.status in ("draining", "retired"):
+            return row
+        if row.status != "running":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, f"only running deployments can be undeployed ({row.status})"
+            )
+        cfg = EngineConfig(**json.loads(row.config_json))
+        url = self.runtime.url(cfg)
+        if url is None:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{cfg.name} is not reachable")
+        self.http.post(f"{url}/drain").raise_for_status()
+        updated = self._set_status(row.id, "draining", "PathwayDraining", cfg)
+        self.check_draining()  # an engine with no running case retires at once
+        return self._get(updated.id)
+
+    def check_draining(self) -> int:
+        """Retire every draining engine whose last case has finished; returns how many."""
+        with self.db.sessions() as s:
+            rows = s.scalars(select(DeploymentRow).where(DeploymentRow.status == "draining")).all()
+        retired = 0
+        for row in rows:
+            cfg = EngineConfig(**json.loads(row.config_json))
+            url = self.runtime.url(cfg)
+            try:
+                running = self.http.get(f"{url}/health").json()["running_cases"] if url else 0
+            except (httpx.HTTPError, KeyError, ValueError):
+                continue  # try again on the next check
+            if running == 0:
+                self.runtime.stop(cfg)
+                self._set_status(row.id, "retired", "PathwayRetired", cfg)
+                retired += 1
+        return retired
+
+    def _get(self, row_id: int) -> DeploymentRow:
+        with self.db.sessions() as s:
+            row = s.get(DeploymentRow, row_id)
+        if row is None:
+            raise RuntimeError(f"deployment {row_id} disappeared")
+        return row
+
+    def _set_status(self, row_id: int, state: str, event_type: str, cfg: EngineConfig) -> DeploymentRow:
+        with self.db.sessions.begin() as s:
+            row = s.get(DeploymentRow, row_id)
+            if row is None:
+                raise RuntimeError(f"deployment {row_id} disappeared")
+            row.status = state
+            payload = {"version_id": cfg.version_id, "container": cfg.name}
+            add_to_outbox(s, Event(event_type, payload, pathway=cfg.pathway, version=cfg.version))
+        if self.relay:
+            self.relay.notify()
+        return row
+
+    def watch(self, stop: threading.Event, interval_s: float = 2.0) -> None:
+        while not stop.wait(interval_s):
+            try:
+                self.check_draining()
+            except Exception:
+                log.exception("drain check failed; retrying")
 
     def resume(self) -> None:
         """After a deployer restart, make sure every running deployment is up again."""
@@ -199,6 +269,12 @@ def deploy(
     return deployment_out(deployer_of(request).deploy(version_id, author))
 
 
+@router.delete("/deployments/{deployment_id}")
+def undeploy(deployment_id: int, request: Request) -> dict[str, Any]:
+    """DEP-02: the version stops taking new cases and is retired when its last case ends."""
+    return deployment_out(deployer_of(request).undeploy(deployment_id))
+
+
 @router.get("/deployments")
 def deployments(s: SessionDep, pathway: str | None = None) -> list[dict[str, Any]]:
     q = select(DeploymentRow).order_by(DeploymentRow.id.desc())
@@ -213,12 +289,13 @@ def create_app(
     runtime: Runtime | None = None,
     fetch_version: FetchVersion = http_fetch_version,
     health_timeout_s: float = HEALTH_TIMEOUT_S,
+    engine_http: httpx.Client | None = None,
 ) -> FastAPI:
     """Build the service; tests pass a fake runtime and designer, the dev stack a local runtime."""
     database = db or Database(make_engine())
     the_runtime = runtime or DockerRuntime(network=os.environ.get("ENGINE_NETWORK", "adaptivecare_default"))
     image = os.environ.get("ENGINE_IMAGE", "adaptivecare/engine:dev")
-    svc = Deployer(database, the_runtime, fetch_version, image, health_timeout_s)
+    svc = Deployer(database, the_runtime, fetch_version, image, health_timeout_s, engine_http)
     owns_bus = bus is None
     the_bus: Bus | None = bus or (RabbitBus(os.environ["AMQP_URL"]) if os.environ.get("AMQP_URL") else None)
     svc.relay = OutboxRelay(database.sessions, the_bus) if the_bus else None
@@ -230,7 +307,11 @@ def create_app(
         if owns_bus and the_bus:
             the_bus.start()
         svc.resume()
+        stop = threading.Event()
+        watcher = threading.Thread(target=svc.watch, args=(stop,), name="drain-watcher", daemon=True)
+        watcher.start()
         yield
+        stop.set()
         if owns_bus and the_bus:
             the_bus.stop()
         if svc.relay:

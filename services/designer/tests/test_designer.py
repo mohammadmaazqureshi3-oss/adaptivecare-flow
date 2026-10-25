@@ -171,3 +171,22 @@ def test_pathway_deployed_marks_the_version_deployed_and_it_stays_immutable(clie
     assert client.put(f"/versions/{vid}", json={"model": v["model"]}).status_code == 409
     assert client.get("/pathways/triage").json()["published_versions"] == [1]
     assert client.post("/pathways/triage/versions").json()["number"] == 2  # a new draft is allowed
+
+
+def test_dep02_version_moves_forward_to_draining_and_retired_only(client: TestClient) -> None:
+    from care_events import Event
+    from designer.main import DeploymentListener
+
+    vid = new_pathway(client)["latest_version"]["id"]
+    client.post(f"/versions/{vid}/verify")
+    client.post(f"/versions/{vid}/publish")
+    listener = DeploymentListener(client.app.state.db)  # type: ignore[attr-defined]
+    for kind in (
+        "PathwayDeployed",
+        "PathwayDraining",
+        "PathwayRetired",
+        "PathwayDeployed",
+    ):  # last one is late
+        listener.on_event(Event(kind, {"version_id": vid}))
+    assert client.get(f"/versions/{vid}").json()["status"] == "retired"
+    assert client.post("/pathways/triage/versions").status_code == 201

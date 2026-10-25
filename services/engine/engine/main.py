@@ -45,14 +45,24 @@ def engine_of(request: Request) -> EngineService:
 
 
 @router.get("/health")
-def health(request: Request) -> dict[str, str]:
+def health(request: Request) -> dict[str, Any]:
     svc = engine_of(request)
     return {
         "status": "ok",
         "service": "engine",
         "pathway": svc.pathway.id,
-        "version": str(svc.pathway.version),
+        "version": svc.pathway.version,
+        "draining": svc.draining,
+        "running_cases": svc.running_cases(),
     }
+
+
+@router.post("/drain")
+def drain(request: Request) -> dict[str, Any]:
+    """DEP-02 (called by the deployer): no new cases; running cases finish."""
+    svc = engine_of(request)
+    svc.drain()
+    return {"draining": True, "running_cases": svc.running_cases()}
 
 
 @router.get("/cases")

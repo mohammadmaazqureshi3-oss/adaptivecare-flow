@@ -4,7 +4,7 @@ All services share one in-memory bus (care_events.InMemoryBus) in place of Rabbi
 keep their data in SQLite files under .dev/. Ports match the services' Compose roles:
 
     gateway 8000 · auth 8001 · designer 8002 · verifier 8003 · patient 8004
-    worklist 8005 · ml 8006 · deployer 8007 · engines from 8010 (one per deployed version)
+    worklist 8005 · ml 8006 · deployer 8007 · simulator 8008 · engines from 8010 (one per deployed version)
 
 Engines: the deployer (DEP-01) runs here with a local runtime, so pressing Deploy as an
 admin starts that version's engine inside this process instead of a Docker container.
@@ -36,6 +36,7 @@ PORTS = {
     "worklist": 8005,
     "ml": 8006,
     "deployer": 8007,
+    "simulator": 8008,
 }
 log = logging.getLogger("dev_stack")
 
@@ -60,13 +61,15 @@ class Stack:
 
         self.bus = InMemoryBus()
         self.servers: list[uvicorn.Server] = []
-        self.engines: dict[tuple[str, int], int] = {}
+        self.engines: dict[str, tuple[uvicorn.Server, str]] = {}  # container name -> (server, queue)
+        self.next_engine_port = 8010
 
-    def serve(self, name: str, app: Any, port: int) -> None:
+    def serve(self, name: str, app: Any, port: int) -> uvicorn.Server:
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
         threading.Thread(target=server.run, name=f"http:{name}", daemon=True).start()
         self.servers.append(server)
         log.info("%-22s http://localhost:%d", name, port)
+        return server
 
     def start_services(self) -> None:
         from auth.db import Database as AuthDB
@@ -84,6 +87,9 @@ class Stack:
         from patient.db import Database as PatientDB
         from patient.db import make_engine as patient_engine
         from patient.main import create_app as patient_app
+        from simulator.db import Database as SimulatorDB
+        from simulator.db import make_engine as simulator_engine
+        from simulator.main import create_app as simulator_app
         from verifier.main import app as verifier_app
         from worklist.db import Database as WorklistDB
         from worklist.db import make_engine as worklist_engine
@@ -104,9 +110,12 @@ class Stack:
         )
         self.serve("ml (placeholder)", ml_app(self.bus), PORTS["ml"])
         self.serve("gateway", gateway_app(), PORTS["gateway"])
-        runtime = LocalRuntime(self.start_engine)
+        runtime = LocalRuntime(self.start_engine, self.stop_engine)
         deployer = deployer_app(DeployerDB(deployer_engine(sqlite("deployer"))), self.bus, runtime)
         self.serve("deployer", deployer, PORTS["deployer"])
+        self.serve(
+            "simulator", simulator_app(SimulatorDB(simulator_engine(sqlite("simulator")))), PORTS["simulator"]
+        )
 
     def start_engine(self, cfg: Any) -> str:
         """LocalRuntime callback: run the engine for a deployment config in this process."""
@@ -116,15 +125,22 @@ class Stack:
 
         designer = f"http://localhost:{PORTS['designer']}"
         model = httpx.get(f"{designer}/versions/{cfg.version_id}", timeout=5).json()["model"]
-        port = 8010 + len(self.engines)
-        self.engines[(cfg.pathway, cfg.version)] = port
+        port, self.next_engine_port = self.next_engine_port, self.next_engine_port + 1
         store = Store(make_engine(sqlite(cfg.schema)))
-        self.serve(
+        server = self.serve(
             f"engine {cfg.pathway} v{cfg.version}",
             engine_app(Pathway.from_dict(model), store, self.bus),
             port,
         )
+        self.engines[cfg.name] = (server, cfg.queue)
         return f"http://localhost:{port}"
+
+    def stop_engine(self, cfg: Any) -> None:
+        """LocalRuntime callback (DEP-02): the retired engine's server and queue go away."""
+        server, queue = self.engines.pop(cfg.name)
+        server.should_exit = True
+        self.bus.unsubscribe(queue)
+        log.info("%-22s stopped (retired)", f"engine {cfg.pathway} v{cfg.version}")
 
     def stop(self) -> None:
         for s in self.servers:

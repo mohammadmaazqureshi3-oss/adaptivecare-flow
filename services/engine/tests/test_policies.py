@@ -291,3 +291,18 @@ def test_eng09_fifty_cases_resume_after_a_crash_and_no_task_is_requested_twice(
     assert all(restarted.load(cid).status == "completed" for cid in before)  # type: ignore[union-attr]
     counts = Counter((e.case_id, e.token_id, e.attempt) for e in outbox(store) if e.type == "TaskRequested")
     assert len(counts) == 50 * 4 and set(counts.values()) == {1}  # each task requested exactly once
+
+
+# ---- DEP-02: draining ---------------------------------------------------------------------------
+
+
+def test_dep02_a_draining_engine_finishes_running_cases_but_starts_no_new_ones(store: Store) -> None:
+    svc, _, _ = started(store, VISIT)
+    assert svc.running_cases() == 1
+    svc.drain()
+    svc.on_event(registration(2))  # a new patient: ignored while draining
+    assert svc.running_cases() == 1
+    for node in ("bed", "lab", "transfer"):
+        svc.on_event(answer(requested(store, node)[0]))
+    assert svc.running_cases() == 0
+    assert EngineService(VISIT, store).draining  # the flag survives a restart

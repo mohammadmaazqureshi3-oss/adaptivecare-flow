@@ -212,3 +212,29 @@ button.danger-solid { background: var(--bad); border-color: var(--bad); color: #
 .due.soon { background: var(--warn-bg); color: var(--warn); }
 .due.overdue { background: var(--bad-bg); color: var(--bad); }
 .badge-deployed { background: #ccfbf1; color: #0f766e; }
+
+/* ---- simulate (SIM-01..03) ---- */
+.page.wide { max-width: 1250px; }
+h2.flush { margin: 0; }
+.spaced { margin-top: 0.8rem; }
+.sim-form { display: flex; flex-direction: column; gap: 0.8rem; }
+.role-box { border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.7rem 0.6rem; display: flex; gap: 0.6rem; }
+.role-box legend { font-weight: 600; font-size: 0.85rem; }
+.role-box input { width: 6rem; }
+.target-edit select { width: auto; }
+.sim-results { display: flex; flex-direction: column; gap: 0.8rem; }
+.sim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0.8rem; }
+.target-row { display: flex; gap: 0.5rem; align-items: baseline; margin-bottom: 0.35rem; }
+.advice.ok { border-color: #86efac; background: #f0fdf4; }
+.advice.bad { border-color: #fca5a5; background: #fff7f7; }
+.table.compact td, .table.compact th { padding: 0.3rem 0.5rem; }
+.util-cell { width: 160px; }
+.util { position: relative; height: 10px; background: #eef0f3; border-radius: 5px; }
+.util-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 5px; }
+.util-fill.warm { background: #d97706; }
+.util-fill.hot { background: var(--bad); }
+.util-ci { position: absolute; top: -3px; height: 16px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); opacity: 0.5; }
+.history { list-style: none; padding: 0; margin: 0.4rem 0 0; }
+.badge-draining { background: var(--warn-bg); color: var(--warn); }
+.badge-retired { background: #eef0f3; color: var(--muted); }
+button.fit { align-self: flex-start; }

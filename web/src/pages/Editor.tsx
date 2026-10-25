@@ -69,7 +69,8 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
   // Bumped on every load: the canvas remounts, so React Flow measures the new nodes from scratch.
   const [canvasKey, setCanvasKey] = useState(0);
 
-  const frozen = version?.status === "published" || version?.status === "deployed";
+  const FROZEN = ["published", "deployed", "draining", "retired"];
+  const frozen = !!version && FROZEN.includes(version.status);
   const readOnly = user.role !== "designer" || frozen;
 
   const show = useCallback((v: Version) => {
@@ -245,6 +246,11 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
       .then((ds) => setDeployment(ds.find((d) => d.version_id === version.id) ?? null))
       .catch(() => setDeployment(null));
   }, [version, pathwayId, user.role]);
+  const undeploy = () =>
+    act("Undeploying: no new cases start; the engine stops when the running ones finish.", async () => {
+      setDeployment(await api.undeploy(deployment!.id));
+      return api.version(version!.id);
+    });
   const deploy = () =>
     act(`Version ${version!.number} deployed: its engine is running.`, async () => {
       setDeployment(await api.deploy(version!.id));
@@ -337,6 +343,11 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
         <StatusBadge status={version.status} />
         {dirty && <span className="muted small">unsaved changes</span>}
         <span className="spacer" />
+        {(user.role === "designer" || user.role === "manager") && (
+          <a className="ghost" href={`#/pathways/${pathwayId}/simulate`}>
+            Simulate
+          </a>
+        )}
         {user.role === "designer" && !frozen && (
           <>
             <button onClick={save} disabled={busy || !dirty}>
@@ -359,17 +370,23 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
           <>
             {deployment && (
               <span className="muted small">
-                {deployment.status === "running" ? "engine running" : deployment.status} · <code>{deployment.queue}</code>
+                {deployment.status === "running" ? "engine running" : `engine ${deployment.status}`} ·{" "}
+                <code>{deployment.queue}</code>
               </span>
             )}
-            {deployment?.status !== "running" && (
+            {(version.status === "published" || deployment?.status === "failed") && (
               <button className="primary" onClick={deploy} disabled={busy}>
                 {busy ? "Deploying…" : "Deploy"}
               </button>
             )}
+            {deployment?.status === "running" && (
+              <button onClick={undeploy} disabled={busy} title="No new cases; retired when the running ones finish">
+                Undeploy
+              </button>
+            )}
           </>
         )}
-        {user.role === "designer" && (latest?.status === "published" || latest?.status === "deployed") && (
+        {user.role === "designer" && latest && FROZEN.includes(latest.status) && (
           <button className="primary" onClick={newDraft} disabled={busy}>
             New draft (v{latest.number + 1})
           </button>
@@ -379,7 +396,7 @@ function EditorInner({ pathwayId, user }: { pathwayId: string; user: User }) {
       {readOnly && (
         <div className="notice info">
           {frozen
-            ? `${version.status === "deployed" ? "Deployed" : "Published"} versions are immutable. Start a new draft to change this pathway.`
+            ? `${version.status[0].toUpperCase()}${version.status.slice(1)} versions are immutable. Start a new draft to change this pathway.`
             : "Read-only: only designers edit pathways."}
         </div>
       )}

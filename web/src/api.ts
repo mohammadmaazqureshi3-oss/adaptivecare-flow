@@ -19,7 +19,7 @@ export interface VersionSummary {
   id: number;
   pathway_id: string;
   number: number;
-  status: "draft" | "verified" | "published" | "deployed";
+  status: "draft" | "verified" | "published" | "deployed" | "draining" | "retired";
   author: string;
   updated_at: string;
   published_at: string | null;
@@ -93,6 +93,62 @@ export interface PatientIn {
   confirm_duplicate?: boolean;
 }
 
+export interface TargetIn {
+  task: string;
+  max_wait_min: number;
+  max_share: number;
+  urgency_max: number | null;
+}
+
+export interface ScenarioIn {
+  arrivals_per_hour: number | number[];
+  staff: Record<string, number>;
+  cost: Record<string, number>;
+  days: number;
+  warmup_days: number;
+  seed: number;
+  targets: TargetIn[];
+}
+
+export interface EstimateOut {
+  mean: number;
+  low: number;
+  high: number;
+  half_width: number;
+}
+
+export interface SimulationResult {
+  replications: number;
+  cap_reached: boolean;
+  metrics: Record<string, EstimateOut>;
+}
+
+export interface SimulationJob {
+  id: number;
+  version_id: number;
+  pathway: string;
+  version: number;
+  kind: "simulate" | "advise";
+  scenario: ScenarioIn;
+  budget: number | null;
+  status: "queued" | "running" | "done" | "failed";
+  error: string;
+  created_at: string;
+  result: null | {
+    roles: string[];
+    targets: { metric: string; limit: number; text: string }[];
+    simulation?: SimulationResult;
+    advice?: {
+      staff: Record<string, number>;
+      cost: number;
+      feasible: boolean;
+      reason: string;
+      rounds: { staff: Record<string, number>; cost: number; shortfall: number }[];
+      result: SimulationResult | null;
+    };
+  };
+}
+
 export interface Notification {
   id: number;
   role: string;
@@ -109,7 +165,7 @@ export interface Deployment {
   container: string;
   queue: string;
   schema: string;
-  status: "starting" | "running" | "failed" | "stopped";
+  status: "starting" | "running" | "failed" | "draining" | "retired";
   error: string;
   requested_by: string;
   started_at: string;
@@ -259,8 +315,14 @@ export const api = {
   searchPatients: (q: string) => request<Patient[]>("GET", `/patients?q=${encodeURIComponent(q)}`),
   registerPatient: (p: PatientIn) => request<Patient>("POST", "/patients", p),
 
+  startSimulation: (versionId: number, body: { scenario: ScenarioIn; advise: boolean; budget: number | null }) =>
+    request<SimulationJob>("POST", `/versions/${versionId}/simulations`, body),
+  simulation: (jobId: number) => request<SimulationJob>("GET", `/simulations/${jobId}`),
+  simulations: (versionId: number) => request<SimulationJob[]>("GET", `/simulations?version_id=${versionId}`),
+
   notifications: () => request<Notification[]>("GET", "/notifications"),
   deploy: (versionId: number) => request<Deployment>("POST", `/versions/${versionId}/deploy`),
+  undeploy: (deploymentId: number) => request<Deployment>("DELETE", `/deployments/${deploymentId}`),
   deployments: (pathway: string) => request<Deployment[]>("GET", `/deployments?pathway=${encodeURIComponent(pathway)}`),
 
   tasks: (includeDone = false) => request<Task[]>("GET", `/tasks${includeDone ? "?include_done=true" : ""}`),

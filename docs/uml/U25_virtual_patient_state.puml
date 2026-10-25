@@ -1,0 +1,21 @@
+@startuml U25_virtual_patient_state
+!include style.iuml
+title U25 — Virtual patient (state machine, Sprint 5)
+
+[*] --> Arrived : arrival event\n/ urgency sampled
+Arrived --> Moving : first token after Start
+Moving --> Moving : instant moves\n(decision, merge, split, join)
+Moving --> Queued : human task, no free staff\n/ joins role queue (urgency, arrival)
+Moving --> InService : human task, staff free\n/ wait = 0
+Queued --> InService : staff freed, most urgent first\n/ record wait
+Moving --> InService : service / ML task or timer\n(no staff needed)
+InService --> Moving : task end event\n/ deadline met or missed
+Moving --> Parked : at a parallel join, other branch running
+Parked --> Moving : last branch arrives
+Moving --> Done : End fires and no token is left\n/ length of stay
+Done --> [*]
+note right of Queued
+  Several states at once when parallel
+  branches run (one per token).
+end note
+@enduml
