@@ -65,6 +65,12 @@ a reply must carry the same value, and only the token waiting on exactly that id
 `TaskRequested` carries `override` (`{suggested, decided}`) when the task has an override check;
 a `TaskCompleted` from the worklist then carries `override` (`{suggested, decided, reason}`) if changed.
 
+### Sprint 7 (decision 0007)
+No new event types. `TaskRequested.News2Score` → scores service: inputs `rr`, `spo2`, `oxygen`,
+`sbp`, `hr`, `temp`, `mental`; the reply's outputs are the declared ones of `news2`,
+`news2_risk`, `news2_note`, plus `points` per observation. Missing observations →
+`TaskFailed {temporary: false}`. The worklist's `monitor` queue is bound to `#` (read only).
+
 ### `PatientRegistered` payload
 `patient_id` (record number), `age`, `sex`, `arrival_mode`, `chief_complaint`: no name or birth date.
 
@@ -115,6 +121,13 @@ All user requests go through the gateway, which checks the token and the role
 | `POST /tasks/{id}/fail` | clinical roles: report a problem (`{reason}`) |
 | `GET /overrides` | manager, admin: WRK-02 audit of changed suggestions |
 | `GET/POST /beds`, `POST /beds/{id}/release` | clinical roles: beds (PAT-02) |
+| `GET /cases?status=&pathway=&patient=`, `GET /cases/{id}` | admin, doctor, manager: case summaries; one case's history and the patient's journey (MON-01) |
+| `GET /dashboard?hours=` | manager, admin: active cases, queues, waits, missed deadlines (MON-02) |
+| `GET /monitor/services` | admin: every service's health and request metrics (MON-03; answered by the gateway) |
+| `GET /metrics`, `GET /metrics.json` | every service, inside the network (bearer `METRICS_TOKEN` if set) |
+| `GET/POST /alert-contacts`, `PATCH /alert-contacts/{id}` | admin: who gets email/SMS alerts per role (WRK-03) |
+| `GET /deliveries` | manager, admin: alerts sent, pending or failed (WRK-03) |
+| `GET /simulations/compare?a=&b=` | designer, manager: two finished runs side by side (SIM-05) |
 | `POST /versions/{id}/deploy`, `GET /deployments` | deploy: admin only (NFR-SEC-03); list: designer, manager, admin |
 
 | `DELETE /deployments/{id}` | admin: undeploy, drain then retire (DEP-02) |

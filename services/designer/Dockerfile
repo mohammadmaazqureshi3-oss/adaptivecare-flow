@@ -2,6 +2,8 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY services/designer/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY packages/service-metrics /tmp/service-metrics
+RUN pip install --no-cache-dir /tmp/service-metrics
 COPY packages/pathway-core /tmp/pathway-core
 RUN pip install --no-cache-dir /tmp/pathway-core
 COPY packages/care-events /tmp/care-events

@@ -75,6 +75,9 @@ def test_nfr_sec02_permission_matrix(client: TestClient, rule, role: str) -> Non
         ("doctor", "GET", "/pathways"),
         ("designer", "POST", "/patients"),  # only clinical staff register patients
         ("manager", "GET", "/patients"),
+        ("nurse", "GET", "/cases"),  # case history: admin, doctor, manager only (MON-01)
+        ("doctor", "GET", "/dashboard"),  # dashboards: admin, manager (MON-02)
+        ("manager", "POST", "/alert-contacts"),  # admins keep alert contacts (WRK-03)
     ],
 )
 def test_auth03_matrix_spot_checks_from_section_10(
@@ -141,3 +144,28 @@ def test_nfr_sec03_designers_publish_but_only_admins_deploy(client: TestClient) 
     assert call(client, "POST", "/versions/1/deploy", token("designer")).status_code == 403
     r = call(client, "POST", "/versions/1/deploy", token("admin"))
     assert r.status_code == 200 and r.json()["host"] == "deployer"
+
+
+def test_mon03_admins_see_every_services_health_and_metrics(client: TestClient) -> None:
+    call(client, "GET", "/tasks", token("nurse"))  # one proxied request, labelled by its rule
+    r = call(client, "GET", "/monitor/services", token("admin"))
+    assert r.status_code == 200
+    rows = {row["service"]: row for row in r.json()}
+    assert set(rows) == {"gateway", "auth", "designer", "verifier", "simulator", "deployer", "worklist",
+                         "patient", "ml", "scores"}  # fmt: skip
+    assert all(row["status"] == "ok" for row in rows.values())
+    assert rows["gateway"]["requests"] >= 1
+    assert 'route="worklist:/tasks",status="200"' in client.get("/metrics").text
+    assert call(client, "GET", "/monitor/services", token("manager")).status_code == 403
+    assert call(client, "GET", "/monitor/services", None).status_code == 401
+
+
+def test_mon03_a_service_that_is_down_shows_as_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", SECRET)
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+
+    c = TestClient(create_app(httpx.MockTransport(down)))
+    rows = call(c, "GET", "/monitor/services", token("admin")).json()
+    assert rows[0]["status"] == "ok" and rows[1]["status"] == "down (ConnectError)"

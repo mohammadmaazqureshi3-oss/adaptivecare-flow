@@ -1,28 +1,36 @@
 @startuml U32_deployment
 !include style.iuml
-title U32 — Containers on one host (deployment, Sprint 0 draft)
+title U32 — Containers on one host (deployment, final: Sprint 7)
 node "Host (macOS Apple silicon or Linux)\nDocker Engine" as host {
   node "compose network" {
-    artifact "web: nginx:1.27" as web
+    artifact "web: nginx:1.27-alpine\n(React build)" as web
     artifact "gateway :8000" as gw
     artifact auth
     artifact designer
     artifact verifier
     artifact simulator
-    artifact "deployer\n(docker.sock mounted, NFR-SEC-04)" as dep
-    artifact worklist
-    artifact patient
-    artifact ml
-    artifact "engine-triage-v1 …\n(one per deployed version)" as eng
+    artifact "deployer\n(only container with docker.sock, NFR-SEC-04)" as dep
+    artifact "worklist\n(alert sender thread)" as wl
+    artifact "patient\n(PATIENT_DATA_SECRET from .env)" as pt
+    artifact "ml\n(models/urgency-v1.joblib)" as ml
+    artifact scores
+    artifact "engine-triage-v3, engine-assessment-v1, …\n(one per deployed version)" as eng
     database "postgres:16" as pg
-    queue "rabbitmq:3" as mq
+    queue "rabbitmq:3-management" as mq
+    artifact "prometheus:v3.5.0\n(profile: monitoring)" as prom
   }
 }
+cloud "SMTP / SMS gateway\n(optional, ALERT_* settings)" as notify
 web -[hidden]- gw
 dep ..> eng : starts / stops
+wl ..> notify
+prom ..> gw : scrapes /metrics
 note right of host
   Ports exposed to the host:
   8080 web, 8000 gateway,
+  9090 Prometheus (monitoring profile),
   15672 RabbitMQ console (dev only).
+  Secrets (JWT, patient data key, SMTP) come
+  from .env, never from the images.
 end note
 @enduml

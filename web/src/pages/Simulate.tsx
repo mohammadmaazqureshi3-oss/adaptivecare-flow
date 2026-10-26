@@ -13,6 +13,7 @@ import {
   type User,
   type Version,
 } from "../api";
+import { CompareRuns } from "./Compare";
 
 const fmt = (x: number, digits = 1) => (Number.isFinite(x) ? x.toFixed(digits) : "—");
 
@@ -185,6 +186,8 @@ export function Simulate({ pathwayId, user }: { pathwayId: string; user: User })
   const [budget, setBudget] = useState(20);
   const [job, setJob] = useState<SimulationJob | null>(null);
   const [history, setHistory] = useState<SimulationJob[]>([]);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [comparing, setComparing] = useState<[number, number] | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -366,17 +369,36 @@ export function Simulate({ pathwayId, user }: { pathwayId: string; user: User })
       {history.length > 0 && (
         <details className="spaced">
           <summary>Earlier runs of this version ({history.length})</summary>
+          <p className="muted small">Tick two finished runs to compare them side by side (SIM-05).</p>
           <ul className="history">
             {history.map((h) => (
-              <li key={h.id}>
+              <li key={h.id} className="inline">
+                <input
+                  type="checkbox"
+                  className="short-check"
+                  aria-label={`Compare run ${h.id}`}
+                  disabled={h.status !== "done" || (picked.length === 2 && !picked.includes(h.id))}
+                  checked={picked.includes(h.id)}
+                  onChange={() =>
+                    setPicked((p) => (p.includes(h.id) ? p.filter((x) => x !== h.id) : [...p, h.id]))
+                  }
+                />
                 <button className="ghost" onClick={() => setJob(h)}>
                   #{h.id} · {h.kind} · {new Date(h.created_at).toLocaleString()} · {h.status}
                 </button>
               </li>
             ))}
           </ul>
+          <button
+            className="primary"
+            disabled={picked.length !== 2}
+            onClick={() => setComparing([Math.min(...picked), Math.max(...picked)])}
+          >
+            Compare the two runs
+          </button>
         </details>
       )}
+      {comparing && <CompareRuns a={comparing[0]} b={comparing[1]} onClose={() => setComparing(null)} />}
     </div>
   );
 }

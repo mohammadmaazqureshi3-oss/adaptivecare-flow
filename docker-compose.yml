@@ -86,12 +86,25 @@ services:
     <<: *service
     build: { context: ., dockerfile: services/ml/Dockerfile }
 
+  scores:
+    # CLN-04: a new task type as a new service (NEWS2); no engine change
+    <<: *service
+    build: { context: ., dockerfile: services/scores/Dockerfile }
+
   engine:
     # Image only: the deployer starts one container per deployed version (DEP-01).
     # Build it with: docker compose --profile engine build engine
     build: { context: ., dockerfile: services/engine/Dockerfile }
     image: adaptivecare/engine:dev
     profiles: ["engine"]
+
+  prometheus:
+    # MON-03 (Should): docker compose --profile monitoring up -d, then http://localhost:9090
+    image: prom/prometheus:v3.5.0
+    profiles: ["monitoring"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
 
   web:
     build: { context: ., dockerfile: web/Dockerfile }

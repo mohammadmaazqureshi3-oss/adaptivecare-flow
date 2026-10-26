@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Import packages and services from source: macOS can hide the venv's .pth files,
 # which Python 3.13 then skips.
-PYTHONPATH="$PWD/packages/pathway-core/src:$PWD/packages/care-events/src"
+PYTHONPATH="$PWD/packages/pathway-core/src:$PWD/packages/care-events/src:$PWD/packages/service-metrics/src"
 for svc in services/*/; do PYTHONPATH="$PYTHONPATH:$PWD/${svc%/}"; done
 export PYTHONPATH
 exec .venv/bin/python scripts/dev_stack.py

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from patient.beds import BedService
 from patient.db import Database, make_engine
 from patient.main import age, create_app
+from patient.vault import Vault
 from sqlalchemy import select
 
 AS_NURSE = {"x-user-email": "nadia@example.org"}
@@ -74,10 +75,12 @@ def test_pat01_search_by_name_part_and_record_number(client: TestClient) -> None
     register(client, name="Grace Hopper", date_of_birth="1906-12-09")
     assert [p["name"] for p in client.get("/patients", params={"q": "LOVE"}).json()] == ["Ada Lovelace"]
     assert [p["name"] for p in client.get("/patients", params={"q": "a"}).json()] == [
-        "Grace Hopper",
         "Alan Turing",
         "Ada Lovelace",
-    ]  # newest first
+    ]  # newest first; words that start with "a"
+    assert [p["name"] for p in client.get("/patients", params={"q": "ada lo"}).json()] == ["Ada Lovelace"]
+    assert client.get("/patients", params={"q": "ada turing"}).json() == []  # every word must match
+    assert client.get("/patients", params={"q": "velace"}).json() == []  # starts of words only
     for mrn in ("P000001", "p1", " P000001 "):
         assert [p["id"] for p in client.get("/patients", params={"q": mrn}).json()] == [ada["id"]]
     assert client.get("/patients", params={"q": "P999999"}).json() == []
@@ -197,3 +200,41 @@ def test_pat02_release_bed_undo_and_admission(client: TestClient) -> None:
     svc.on_event(Event("PatientAdmitted", {"bed_id": "W2-01", "patient_id": "P000001"}, event_id="adm-1"))
     assert client.get("/beds").json()[0]["status"] == "occupied"
     assert client.post("/beds/W2-01/release").json()["status"] == "free"
+
+
+# ---- NFR-SEC-05: encrypted at rest ----------------------------------------------------------
+
+
+def test_nfr_sec05_name_and_birth_date_are_unreadable_in_the_database(client: TestClient) -> None:
+    register(client, name="Ada Lovelace", date_of_birth="1985-12-10")
+    db = client.app.state.db  # type: ignore[attr-defined]
+    with db.engine.connect() as c:  # the raw database, as an attacker with a copy would see it
+        dump = " ".join(
+            str(value)
+            for table in ("patients", "patient_terms")
+            for row in c.exec_driver_sql(f"SELECT * FROM {table}")  # noqa: S608 - fixed table names
+            for value in row
+        ).lower()
+    for secret in ("ada", "lovelace", "1985", "12-10"):
+        assert secret not in dump
+    assert client.get("/patients/1").json()["name"] == "Ada Lovelace"  # readable through the service
+
+
+def test_nfr_sec05_another_key_cannot_read_or_find_the_patients() -> None:
+    engine = make_engine("sqlite://")
+    TestClient(create_app(Database(engine, Vault("first-secret-" + "x" * 30)))).post(
+        "/patients", json=ADA, headers=AS_NURSE
+    )
+    other = TestClient(create_app(Database(engine, Vault("other-secret-" + "y" * 30))))
+    assert other.get("/patients", params={"q": "ada"}).json() == []
+    with pytest.raises(ValueError, match="cannot be decrypted"):
+        other.get("/patients/1")
+    engine.dispose()
+
+
+def test_nfr_sec05_the_service_needs_a_strong_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="at least 32"):
+        Vault("short")
+    monkeypatch.delenv("PATIENT_DATA_SECRET")
+    with pytest.raises(RuntimeError, match="PATIENT_DATA_SECRET"):
+        Vault.from_env()

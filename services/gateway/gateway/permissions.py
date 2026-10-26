@@ -18,6 +18,9 @@ DESIGNER = frozenset({"designer"})
 PATHWAY_READERS = frozenset({"designer", "manager", "admin"})
 # Charge nurses have a nurse's permissions and receive escalated tasks (decision 0004).
 CLINICAL = frozenset({"nurse", "charge_nurse", "doctor"})
+# "View cases and their history": admin, doctor, manager. "Dashboards and alerts": admin, manager.
+CASE_READERS = frozenset({"admin", "doctor", "manager"})
+MANAGERS = frozenset({"manager", "admin"})
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,7 @@ RULES: tuple[Rule, ...] = (
     # simulator: designers and managers run and view simulations (SIM-01..03)
     Rule("POST", "/versions/{id}/simulations", "simulator", frozenset({"designer", "manager"})),
     Rule("GET", "/simulations", "simulator", frozenset({"designer", "manager"})),
+    Rule("GET", "/simulations/compare", "simulator", frozenset({"designer", "manager"})),  # SIM-05
     Rule("GET", "/simulations/{id}", "simulator", frozenset({"designer", "manager"})),
     # deployer: only admins deploy (NFR-SEC-03, separation of duties)
     Rule("POST", "/versions/{id}/deploy", "deployer", ADMIN),
@@ -75,6 +79,15 @@ RULES: tuple[Rule, ...] = (
     Rule("POST", "/tasks/{id}/fail", "worklist", CLINICAL),
     Rule("GET", "/overrides", "worklist", frozenset({"manager", "admin"})),
     Rule("GET", "/notifications", "worklist", CLINICAL | {"manager", "admin"}),
+    # monitoring: case history (MON-01) and the dashboard (MON-02), plan Section 10 matrix
+    Rule("GET", "/cases", "worklist", CASE_READERS),
+    Rule("GET", "/cases/{id}", "worklist", CASE_READERS),
+    Rule("GET", "/dashboard", "worklist", MANAGERS),
+    # WRK-03: admins keep the alert contacts; managers and admins see what was sent
+    Rule("GET", "/alert-contacts", "worklist", ADMIN),
+    Rule("POST", "/alert-contacts", "worklist", ADMIN),
+    Rule("PATCH", "/alert-contacts/{id}", "worklist", ADMIN),
+    Rule("GET", "/deliveries", "worklist", MANAGERS),
 )
 
 _COMPILED = [(r, r.regex) for r in RULES]

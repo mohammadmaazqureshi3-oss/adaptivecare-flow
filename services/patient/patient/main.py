@@ -5,6 +5,7 @@ gateway, which has already checked their role and passes their identity in
 ``X-User-Email``. Each registration also publishes ``PatientRegistered`` through the
 outbox, in the same transaction, which starts a case on every deployed pathway whose
 trigger matches (ENG-01). The event carries the record number, not the name.
+Name and date of birth are encrypted at rest (NFR-SEC-05, ``patient.vault``).
 """
 
 import os
@@ -18,11 +19,13 @@ from care_events import Bus, Event, OutboxRelay, add_to_outbox
 from care_events.rabbit import RabbitBus
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from service_metrics import instrument
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from patient.beds import BINDINGS, BedService, bed_out
-from patient.db import BedRow, Database, PatientRow, iso, make_engine, now
+from patient.db import BedRow, Database, PatientRow, PatientTermRow, iso, make_engine, now
+from patient.vault import Vault
 
 MAX_AGE_YEARS = 130
 MRN = re.compile(r"^[Pp]0*(\d{1,9})$")
@@ -65,13 +68,18 @@ def age(dob: date, today: date | None = None) -> int:
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
-def patient_out(p: PatientRow) -> dict[str, Any]:
+def birth_date(p: PatientRow, vault: Vault) -> date:
+    return date.fromisoformat(vault.decrypt(p.dob_enc))
+
+
+def patient_out(p: PatientRow, vault: Vault) -> dict[str, Any]:
+    dob = birth_date(p, vault)
     return {
         "id": p.id,
         "mrn": p.mrn,
-        "name": p.name,
-        "date_of_birth": p.date_of_birth.isoformat(),
-        "age": age(p.date_of_birth),
+        "name": vault.decrypt(p.name_enc),
+        "date_of_birth": dob.isoformat(),
+        "age": age(dob),
         "sex": p.sex,
         "arrival_mode": p.arrival_mode,
         "chief_complaint": p.chief_complaint,
@@ -80,13 +88,13 @@ def patient_out(p: PatientRow) -> dict[str, Any]:
     }
 
 
-def registered_event(p: PatientRow) -> Event:
+def registered_event(p: PatientRow, dob: date) -> Event:
     """ENG-01 trigger. Minimum necessary data: no name or birth date leaves this service."""
     return Event(
         "PatientRegistered",
         {
             "patient_id": p.mrn,
-            "age": age(p.date_of_birth),
+            "age": age(dob),
             "sex": p.sex,
             "arrival_mode": p.arrival_mode,
             "chief_complaint": p.chief_complaint,
@@ -102,7 +110,13 @@ def session(request: Request) -> Iterator[Session]:
     yield from db.session()
 
 
+def vault_of(request: Request) -> Vault:
+    db: Database = request.app.state.db
+    return db.vault
+
+
 SessionDep = Annotated[Session, Depends(session)]
+VaultDep = Annotated[Vault, Depends(vault_of)]
 Author = Annotated[str, Header(alias="x-user-email")]
 
 
@@ -112,24 +126,24 @@ def health() -> dict[str, str]:
 
 
 @router.post("/patients", status_code=status.HTTP_201_CREATED)
-def register(body: PatientIn, request: Request, s: SessionDep, author: Author = "unknown") -> dict[str, Any]:
+def register(
+    body: PatientIn, request: Request, s: SessionDep, vault: VaultDep, author: Author = "unknown"
+) -> dict[str, Any]:
     """PAT-01: register a patient. The same name and birth date needs an explicit confirmation."""
-    key = body.name.lower()
-    same = s.scalars(
-        select(PatientRow).where(PatientRow.name_key == key, PatientRow.date_of_birth == body.date_of_birth)
-    ).all()
+    identity = vault.identity(body.name, body.date_of_birth)
+    same = s.scalars(select(PatientRow).where(PatientRow.identity == identity)).all()
     if same and not body.confirm_duplicate:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             {
                 "message": "a patient with this name and date of birth exists",
-                "matches": [patient_out(p) for p in same],
+                "matches": [patient_out(p, vault) for p in same],
             },
         )
     p = PatientRow(
-        name=body.name,
-        name_key=key,
-        date_of_birth=body.date_of_birth,
+        name_enc=vault.encrypt(body.name),
+        dob_enc=vault.encrypt(body.date_of_birth.isoformat()),
+        identity=identity,
         sex=body.sex,
         arrival_mode=body.arrival_mode,
         chief_complaint=body.chief_complaint.strip(),
@@ -137,34 +151,42 @@ def register(body: PatientIn, request: Request, s: SessionDep, author: Author = 
     )
     s.add(p)
     s.flush()  # assigns the id, so the event can carry the record number
-    add_to_outbox(s, registered_event(p))
+    s.add_all(PatientTermRow(patient_id=p.id, term=t) for t in vault.name_terms(body.name))
+    add_to_outbox(s, registered_event(p, body.date_of_birth))
     s.commit()
     if relay := request.app.state.relay:
         relay.notify()
-    return patient_out(p)
+    return patient_out(p, vault)
 
 
 @router.get("/patients")
 def search(
-    s: SessionDep, q: str = "", limit: Annotated[int, Query(ge=1, le=200)] = 50
+    s: SessionDep, vault: VaultDep, q: str = "", limit: Annotated[int, Query(ge=1, le=200)] = 50
 ) -> list[dict[str, Any]]:
-    """PAT-01: search by record number (P000042) or by part of the name; newest arrivals first."""
+    """PAT-01: search by record number (P000042) or by the start of name words ("ada love");
+    newest arrivals first. Matching uses the blind index: no name is decrypted to search."""
     query = select(PatientRow).order_by(PatientRow.arrived_at.desc(), PatientRow.id.desc()).limit(limit)
     q = " ".join(q.split()).lower()
     if m := MRN.match(q):
         query = query.where(PatientRow.id == int(m.group(1)))
     elif q:
-        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        query = query.where(PatientRow.name_key.like(f"%{escaped}%", escape="\\"))
-    return [patient_out(p) for p in s.scalars(query)]
+        terms = vault.query_terms(q)
+        matching = (
+            select(PatientTermRow.patient_id)
+            .where(PatientTermRow.term.in_(terms))
+            .group_by(PatientTermRow.patient_id)
+            .having(func.count(func.distinct(PatientTermRow.term)) == len(set(terms)))
+        )
+        query = query.where(PatientRow.id.in_(matching))
+    return [patient_out(p, vault) for p in s.scalars(query)]
 
 
 @router.get("/patients/{patient_id}")
-def read(patient_id: int, s: SessionDep) -> dict[str, Any]:
+def read(patient_id: int, s: SessionDep, vault: VaultDep) -> dict[str, Any]:
     p = s.get(PatientRow, patient_id)
     if p is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found")
-    return patient_out(p)
+    return patient_out(p, vault)
 
 
 @router.get("/beds")
@@ -220,6 +242,7 @@ def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:
             relay.stop()
 
     app = FastAPI(title="AdaptiveCare patient", version="0.3.0", lifespan=lifespan)
+    app.state.metrics = instrument(app, "patient")
     app.state.db, app.state.relay = database, relay
     app.include_router(router)
     return app

@@ -1,21 +1,22 @@
 """Database access for the patient service: its own schema (``patient``).
 
-Name and date of birth are stored in plain text for now; NFR-SEC-05 (encryption at
-rest with keys outside the repository) is planned for Sprint 7 and changes only this
-module and the search in ``main.py``.
+Name and date of birth are stored encrypted (NFR-SEC-05, ``patient.vault``); search and
+the duplicate check use keyed hashes (the blind index) in ``identity`` and ``patient_terms``.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 from care_events import OutboxBase
-from sqlalchemy import Date, DateTime, Integer, String, create_engine
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
+
+from patient.vault import Vault
 
 SCHEMA = "patient"
 
@@ -37,9 +38,9 @@ class PatientRow(Base):
     __tablename__ = "patients"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(200))
-    name_key: Mapped[str] = mapped_column(String(200), index=True)  # lower-case, for search
-    date_of_birth: Mapped[date] = mapped_column(Date)
+    name_enc: Mapped[str] = mapped_column(Text)  # Fernet token
+    dob_enc: Mapped[str] = mapped_column(Text)  # Fernet token of the ISO date
+    identity: Mapped[str] = mapped_column(String(32), index=True)  # HMAC of name + birth date
     sex: Mapped[str] = mapped_column(String(10))
     arrival_mode: Mapped[str] = mapped_column(String(20))
     chief_complaint: Mapped[str] = mapped_column(String(200), default="")
@@ -50,6 +51,15 @@ class PatientRow(Base):
     def mrn(self) -> str:
         """Medical record number shown to staff, e.g. P000042."""
         return f"P{self.id:06d}"
+
+
+class PatientTermRow(Base):
+    """Blind index for search: one keyed hash per prefix of each name word."""
+
+    __tablename__ = "patient_terms"
+
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), primary_key=True)
+    term: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
 
 
 class BedRow(Base):
@@ -77,8 +87,9 @@ def make_engine(url: str | None = None) -> Engine:
 
 
 class Database:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, vault: Vault | None = None) -> None:
         self.engine = engine
+        self.vault = vault or Vault.from_env()
         self.sessions = sessionmaker(engine, expire_on_commit=False)
         Base.metadata.create_all(engine)
         OutboxBase.metadata.create_all(engine)

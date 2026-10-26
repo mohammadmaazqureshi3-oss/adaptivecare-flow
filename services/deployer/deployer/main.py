@@ -27,6 +27,7 @@ import httpx
 from care_events import Bus, Event, OutboxRelay, add_to_outbox
 from care_events.rabbit import RabbitBus
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
+from service_metrics import instrument
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -318,6 +319,7 @@ def create_app(
             svc.relay.stop()
 
     app = FastAPI(title="AdaptiveCare deployer", version="0.4.0", lifespan=lifespan)
+    app.state.metrics = instrument(app, "deployer")
     app.state.deployer = svc
     app.include_router(router)
     return app

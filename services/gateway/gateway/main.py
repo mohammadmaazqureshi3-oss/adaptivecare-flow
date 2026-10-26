@@ -14,10 +14,11 @@ import httpx
 import jwt
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from service_metrics import instrument
 
 from gateway.permissions import PUBLIC, Rule, match
 
-SERVICES = ["auth", "designer", "verifier", "simulator", "deployer", "worklist", "patient", "ml"]
+SERVICES = ["auth", "designer", "verifier", "simulator", "deployer", "worklist", "patient", "ml", "scores"]
 FORWARDED_HEADERS = ("authorization", "content-type", "accept")
 
 
@@ -92,12 +93,39 @@ async def health_all(request: Request) -> dict[str, object]:
     return {"status": "ok" if healthy else "degraded", "services": results}
 
 
+@router.get("/monitor/services")
+async def monitor_services(request: Request) -> Any:
+    """MON-03 (admins): every service's health and request metrics in one view."""
+    claims = check_token(request)
+    if isinstance(claims, JSONResponse):
+        return claims
+    if claims.get("role") != "admin":
+        return error(403, "your role does not allow this action")
+    client = client_of(request)
+    token = os.environ.get("METRICS_TOKEN")
+    auth = {"Authorization": f"Bearer {token}"} if token else {}
+
+    async def one(name: str) -> dict[str, Any]:
+        try:
+            health = await client.get(f"{service_url(name)}/health", timeout=2.0)
+            metrics = await client.get(f"{service_url(name)}/metrics.json", headers=auth, timeout=2.0)
+        except httpx.HTTPError as exc:
+            return {"service": name, "status": f"down ({type(exc).__name__})"}
+        status = "ok" if health.status_code == 200 else f"http {health.status_code}"
+        body = metrics.json() if metrics.status_code == 200 else {}
+        return {**body, "service": name, "status": status, "health": health.json()}
+
+    own = request.app.state.metrics.summary() | {"status": "ok"}
+    return [own, *await asyncio.gather(*(one(s) for s in SERVICES))]
+
+
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(path: str, request: Request) -> Response:
     """Check the route against the permission matrix, then forward it to its service."""
     rule = match(request.method, "/" + path)
     if rule is None:
         return error(404, "no such route")
+    request.state.metrics_route = f"{rule.service}:{rule.path}"
     headers = authorise(rule, request)
     if isinstance(headers, JSONResponse):
         return headers
@@ -119,6 +147,7 @@ async def proxy(path: str, request: Request) -> Response:
 def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     """Build the gateway; tests pass a mock transport in place of the real services."""
     app = FastAPI(title="AdaptiveCare gateway", version="0.2.0")
+    app.state.metrics = instrument(app, "gateway")
     app.state.client = httpx.AsyncClient(transport=transport, timeout=30.0)
     app.include_router(router)
     return app

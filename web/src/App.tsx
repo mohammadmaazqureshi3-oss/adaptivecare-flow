@@ -3,6 +3,7 @@ import { api, setLoggedOutHandler, type User } from "./api";
 import { Alerts } from "./pages/Alerts";
 import { Editor } from "./pages/Editor";
 import { Login } from "./pages/Login";
+import { Monitor, tabsFor } from "./pages/Monitor";
 import { PathwayList } from "./pages/PathwayList";
 import { Patients } from "./pages/Patients";
 import { Simulate } from "./pages/Simulate";
@@ -43,7 +44,9 @@ export function App() {
 
   const canSeePathways = PATHWAY_ROLES.includes(user.role);
   const clinical = CLINICAL_ROLES.includes(user.role);
-  const [section = canSeePathways ? "pathways" : clinical ? "tasks" : "home", id, sub] = route;
+  // Admins land on monitoring (MON-03); everyone else on their main work.
+  const home = user.role === "admin" ? "monitor" : canSeePathways ? "pathways" : clinical ? "tasks" : "home";
+  const [section = home, id, sub] = route;
 
   return (
     <div className="app">
@@ -63,6 +66,11 @@ export function App() {
           {clinical && (
             <a className={section === "patients" ? "active" : ""} href="#/patients">
               Patients
+            </a>
+          )}
+          {tabsFor(user.role).length > 0 && (
+            <a className={section === "monitor" ? "active" : ""} href="#/monitor">
+              Monitoring
             </a>
           )}
           {(user.role === "manager" || user.role === "admin") && (
@@ -97,17 +105,9 @@ export function App() {
         {section === "users" && user.role === "admin" && <Users me={user} />}
         {section === "patients" && clinical && <Patients />}
         {section === "tasks" && clinical && <Tasks user={user} />}
-        {section === "alerts" && (user.role === "manager" || user.role === "admin") && <Alerts />}
-        {section === "home" && (
-          <div className="centered">
-            <div className="card narrow">
-              <h2>Welcome, {user.name}</h2>
-              <p className="muted">
-                Dashboards for {user.role}s arrive in Sprint 7 (MON-02).
-              </p>
-            </div>
-          </div>
-        )}
+        {section === "alerts" && (user.role === "manager" || user.role === "admin") && <Alerts user={user} />}
+        {section === "monitor" && tabsFor(user.role).length > 0 && <Monitor user={user} tab={id} caseId={sub} />}
+        {section === "home" && <Monitor user={user} />}
       </main>
     </div>
   );

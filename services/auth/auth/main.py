@@ -12,6 +12,7 @@ from typing import Annotated, Any
 import jwt
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
+from service_metrics import instrument
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -192,6 +193,7 @@ def create_app(db: Database | None = None) -> FastAPI:
     database = db or Database(make_engine())
     seed_admin(database)
     app = FastAPI(title="AdaptiveCare auth", version="0.2.0")
+    app.state.metrics = instrument(app, "auth")
     app.state.db = database
     app.include_router(router)
     return app

@@ -4,6 +4,7 @@ httpx==0.28.1
 sqlalchemy==2.1.6
 psycopg[binary]==3.3.6
 pyjwt==2.15.1
+cryptography==50.0.2
 bcrypt==5.0.0
 pika==1.4.4
 scipy==1.18.1

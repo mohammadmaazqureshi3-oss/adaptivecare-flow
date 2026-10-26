@@ -1,6 +1,6 @@
 @startuml U31_components
 !include style.iuml
-title U31 — Services and events (component, Sprint 0 draft)
+title U31 — Services and events (component, final: Sprint 7)
 actor User
 node "web (nginx)" as web
 component gateway
@@ -10,31 +10,45 @@ component verifier
 component simulator
 component deployer
 component "engine.<pathway>.v<n>" as engine
-component worklist
+component "worklist\n(+ monitor, alerts)" as worklist
 component patient
 component ml
+component scores
 queue "RabbitMQ\ncare.events" as mq
 database "PostgreSQL\n(schema per service)" as db
+cloud "SMTP server /\nSMS gateway" as notify
+component "Prometheus\n(profile: monitoring)" as prom
 
 User --> web
 web --> gateway : REST
 gateway --> auth : REST
 gateway --> designer : REST
+gateway --> simulator : REST
 gateway --> deployer : REST
 gateway --> worklist : REST
 gateway --> patient : REST
+note right of gateway : asks every service for\n/health and /metrics.json (MON-03)
 designer --> verifier : POST /verify
-designer --> simulator : POST /simulations
-deployer ..> engine : Docker Engine API\nstart / stop
+simulator --> designer : GET /versions/{id}
+deployer ..> engine : Docker Engine API\nstart / drain / stop
 patient --> mq : PatientRegistered
-engine <--> mq : TaskRequested / TaskCompleted\nTimerFired, Case*
-worklist <--> mq
-ml <--> mq : PredictUrgency
+engine <--> mq : TaskRequested / TaskCompleted\nTaskFailed, Case*, <emit>
+worklist <--> mq : human tasks, escalations;\nmonitor queue bound to # (MON-01)
+patient <--> mq : BedService (PAT-02)
+ml <--> mq : PredictUrgency (ML-02)
+scores <--> mq : News2Score (CLN-04)
+worklist --> notify : email / SMS (WRK-03)
+prom ..> gateway : scrape /metrics
 auth --> db
 designer --> db
 simulator --> db
 deployer --> db
 engine --> db
 worklist --> db
-patient --> db
+patient --> db : name, birth date\nencrypted (NFR-SEC-05)
+note bottom of scores
+  Added in Sprint 7 without any change to the
+  engine: a task names its service, the engine
+  publishes TaskRequested.<service> (NFR-MNT-03).
+end note
 @enduml

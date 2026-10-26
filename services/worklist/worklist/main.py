@@ -10,22 +10,39 @@ Sprint 4: ``TaskReassigned`` moves an overdue task to the next role of the escal
 chain (ENG-06); ``NotificationRequested`` becomes an alert for a role; ``CancelRequested``
 cancels a task; ``CompensateRequested`` creates an "Undo" task whose completion answers
 ``Compensated`` (ENG-08).
+
+Sprint 7: the monitor (``worklist.monitor``) records every case's history for admins and
+managers (MON-01) and computes the manager's dashboard (MON-02); every notification is
+also sent by email or SMS to the role's alert contacts (WRK-03, ``worklist.alerts``).
 """
 
 import os
-from collections.abc import AsyncIterator, Iterator
+import re
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from care_events import Bus, Event, OutboxRelay, add_to_outbox, first_time
 from care_events.rabbit import RabbitBus
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
-from pydantic import BaseModel
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field, model_validator
+from service_metrics import instrument
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from worklist.alerts import (
+    AlertContactRow,
+    AlertSender,
+    Channel,
+    DeliveryRow,
+    channels_from_env,
+    contact_out,
+    delivery_out,
+    queue_deliveries,
+)
 from worklist.db import Database, NotificationRow, OverrideRow, TaskRow, iso, make_engine, now
+from worklist.monitor import CaseEventRow, CaseSummaryRow, Monitor, dashboard, event_out, summary_out
 
 
 class CompleteIn(BaseModel):
@@ -35,6 +52,30 @@ class CompleteIn(BaseModel):
 
 class FailIn(BaseModel):
     reason: str
+
+
+EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+PHONE = r"^\+[1-9][0-9]{6,14}$"  # E.164
+
+
+class ContactIn(BaseModel):
+    role: Literal["charge_nurse", "manager", "nurse", "doctor", "admin"]
+    channel: Literal["email", "sms"]
+    address: str = Field(max_length=254)
+    name: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def address_fits_channel(self) -> "ContactIn":
+        pattern = EMAIL if self.channel == "email" else PHONE
+        if not re.match(pattern, self.address.strip()):
+            kind = "an email address" if self.channel == "email" else "a phone number like +4915112345678"
+            raise ValueError(f"address must be {kind}")
+        self.address = self.address.strip()
+        return self
+
+
+class ContactPatch(BaseModel):
+    active: bool
 
 
 MIN_REASON = 5
@@ -73,6 +114,7 @@ def task_out(t: TaskRow) -> dict[str, Any]:
         "assignee": t.assignee,
         "result": t.result,
         "created_at": iso(t.created_at),
+        "claimed_at": iso(t.claimed_at),
         "completed_at": iso(t.completed_at),
     }
 
@@ -92,8 +134,9 @@ class Consumer:
         "CaseCompensated",
     ]
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, on_alert: Callable[[], None] = lambda: None) -> None:
         self.db = db
+        self.on_alert = on_alert
 
     def on_event(self, event: Event) -> None:
         with self.db.sessions.begin() as s:
@@ -107,6 +150,8 @@ class Consumer:
                 "NotificationRequested": self._notify,
             }.get(event.type, self._case_ended)
             handler(s, event)
+        if event.type == "NotificationRequested":
+            self.on_alert()  # after the commit: wake the sender for the new deliveries
 
     def _requested(self, s: Session, e: Event) -> None:
         s.add(self._task_from(e))
@@ -124,11 +169,11 @@ class Consumer:
 
     def _notify(self, s: Session, e: Event) -> None:
         p = e.payload
-        s.add(
-            NotificationRow(
-                event_id=e.event_id, role=p["role"], message=p["message"], case_id=e.case_id or ""
-            )
+        n = NotificationRow(
+            event_id=e.event_id, role=p["role"], message=p["message"], case_id=e.case_id or ""
         )
+        s.add(n)
+        queue_deliveries(s, n)  # WRK-03, same transaction
 
     def _case_ended(self, s: Session, e: Event) -> None:
         for t in s.scalars(select(TaskRow).where(TaskRow.case_id == e.case_id, TaskRow.kind == "task")):
@@ -233,7 +278,7 @@ def claim(task_id: int, s: SessionDep, email: Email, role: Role) -> dict[str, An
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"task is {t.status}" + (f" by {t.assignee}" if t.assignee else "")
         )
-    t.status, t.assignee = "claimed", email
+    t.status, t.assignee, t.claimed_at = "claimed", email, now()
     s.commit()
     return task_out(t)
 
@@ -243,7 +288,7 @@ def release(task_id: int, s: SessionDep, email: Email, role: Role) -> dict[str, 
     t = get_task(s, task_id, role)
     if t.status != "claimed" or t.assignee != email:
         raise HTTPException(status.HTTP_409_CONFLICT, "only the person who claimed a task can release it")
-    t.status, t.assignee = "open", None
+    t.status, t.assignee, t.claimed_at = "open", None, None
     s.commit()
     return task_out(t)
 
@@ -353,26 +398,131 @@ def overrides(s: SessionDep, limit: int = 100) -> list[dict[str, Any]]:
     ]
 
 
-def create_app(db: Database | None = None, bus: Bus | None = None) -> FastAPI:
+@router.get("/cases")
+def cases(
+    s: SessionDep,
+    status_: Annotated[str | None, Query(alias="status")] = None,
+    pathway: str | None = None,
+    patient: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict[str, Any]]:
+    """MON-01: every case the monitor has seen, newest first, filtered if asked."""
+    q = select(CaseSummaryRow).order_by(CaseSummaryRow.started_at.desc()).limit(limit)
+    if status_:
+        q = q.where(CaseSummaryRow.status == status_)
+    if pathway:
+        q = q.where(CaseSummaryRow.pathway == pathway)
+    if patient:
+        q = q.where(CaseSummaryRow.patient_id == patient.strip().upper())
+    return [summary_out(c) for c in s.scalars(q)]
+
+
+@router.get("/cases/{case_id}")
+def case_history(case_id: str, s: SessionDep) -> dict[str, Any]:
+    """MON-01: a case's full history, and the patient's other cases (the journey across
+    the chained pathways: Triage, Assessment, Visit)."""
+    c = s.get(CaseSummaryRow, case_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "case not found")
+    events = s.scalars(
+        select(CaseEventRow).where(CaseEventRow.case_id == case_id).order_by(CaseEventRow.at, CaseEventRow.id)
+    )
+    journey: Iterable[CaseSummaryRow] = (
+        s.scalars(
+            select(CaseSummaryRow)
+            .where(CaseSummaryRow.patient_id == c.patient_id)
+            .order_by(CaseSummaryRow.started_at)
+        )
+        if c.patient_id
+        else []
+    )
+    return {
+        **summary_out(c),
+        "history": [event_out(e) for e in events],
+        "journey": [summary_out(j) for j in journey],
+    }
+
+
+@router.get("/dashboard")
+def manager_dashboard(s: SessionDep, hours: Annotated[int, Query(ge=1, le=24 * 30)] = 24) -> dict[str, Any]:
+    """MON-02: active cases, queues, waits and missed deadlines."""
+    return dashboard(s, hours=hours)
+
+
+def _count(db: Database, row: Any, status_value: str) -> float:
+    with db.sessions() as s:
+        return float(s.scalar(select(func.count()).select_from(row).where(row.status == status_value)) or 0)
+
+
+# ---- WRK-03: alert contacts (admins) and deliveries ----------------------------------------
+
+
+@router.get("/alert-contacts")
+def contacts(s: SessionDep) -> list[dict[str, Any]]:
+    q = select(AlertContactRow).order_by(AlertContactRow.role, AlertContactRow.id)
+    return [contact_out(c) for c in s.scalars(q)]
+
+
+@router.post("/alert-contacts", status_code=status.HTTP_201_CREATED)
+def add_contact(body: ContactIn, s: SessionDep) -> dict[str, Any]:
+    c = AlertContactRow(role=body.role, channel=body.channel, address=body.address, name=body.name.strip())
+    s.add(c)
+    s.commit()
+    return contact_out(c)
+
+
+@router.patch("/alert-contacts/{contact_id}")
+def set_contact(contact_id: int, body: ContactPatch, s: SessionDep) -> dict[str, Any]:
+    c = s.get(AlertContactRow, contact_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "contact not found")
+    c.active = body.active
+    s.commit()
+    return contact_out(c)
+
+
+@router.get("/deliveries")
+def deliveries(s: SessionDep, limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, Any]]:
+    """WRK-03: what was sent to whom, and what failed (admins, managers)."""
+    q = select(DeliveryRow).order_by(DeliveryRow.id.desc()).limit(limit)
+    return [delivery_out(d) for d in s.scalars(q)]
+
+
+def create_app(
+    db: Database | None = None, bus: Bus | None = None, channels: dict[str, Channel] | None = None
+) -> FastAPI:
     """Build the service; tests and the dev stack pass a database and a shared bus."""
     database = db or Database(make_engine())
     owns_bus = bus is None
     the_bus: Bus = bus or RabbitBus(os.environ["AMQP_URL"])
     relay = OutboxRelay(database.sessions, the_bus)
-    consumer = Consumer(database)
+    sender = AlertSender(database.sessions, channels or channels_from_env())
+    consumer = Consumer(database, on_alert=sender.notify)
     the_bus.subscribe("worklist", Consumer.BINDINGS, consumer.on_event)
+    monitor = Monitor(database)
+    the_bus.subscribe("monitor", Monitor.BINDINGS, monitor.on_event)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         relay.start()
+        sender.start()
         if owns_bus:
             the_bus.start()
         yield
         if owns_bus:
             the_bus.stop()
+        sender.stop()
         relay.stop()
 
     app = FastAPI(title="AdaptiveCare worklist", version="0.3.0", lifespan=lifespan)
+    app.state.metrics = metrics = instrument(app, "worklist")
+    metrics.gauge(
+        "worklist_open_tasks", "Tasks waiting for a person.", lambda: _count(database, TaskRow, "open")
+    )
+    metrics.gauge(
+        "worklist_alerts_pending", "Alerts not yet sent.", lambda: _count(database, DeliveryRow, "pending")
+    )
     app.state.db, app.state.relay, app.state.consumer = database, relay, consumer
+    app.state.monitor, app.state.sender = monitor, sender
     app.include_router(router)
     return app

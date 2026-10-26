@@ -15,11 +15,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install -e packages/pathway-core -e packages/care-events -r requirements-dev.txt
+        run: pip install -e packages/pathway-core -e packages/care-events -e packages/service-metrics -r requirements-dev.txt
       - name: Lint (ruff)
         run: ruff check packages services scripts tests && ruff format --check packages services scripts tests
       - name: Types (mypy)
-        run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer services/simulator/simulator packages/care-events/src services/ml/training
+        run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py
       - name: Tests and coverage (NFR-MNT-01)
         run: python -m pytest --cov --cov-report=term
       - name: Complexity (NFR-MNT-02)
@@ -29,8 +29,9 @@ jobs:
           if [ -n "$found" ]; then echo "$found"; exit 1; fi
       - name: Security (NFR-SEC-06)
         run: |
-          bandit -q -r packages/pathway-core/src services -x "*/tests/*"
+          bandit -q -r packages services scripts -x "*/tests/*"
           pip-audit -r requirements-dev.txt
+          for f in services/*/requirements.txt; do pip-audit -r "$f"; done
 
   web:
     runs-on: ubuntu-latest

@@ -15,10 +15,12 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from pathway_core import ModelError, Pathway
 from pydantic import BaseModel
+from service_metrics import instrument
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from simulator.advisor import advise
+from simulator.compare import compare
 from simulator.db import Database, JobRow, iso, make_engine, now
 from simulator.scenario import Scenario, human_roles, readiness_issues
 from simulator.stats import replicate
@@ -152,6 +154,18 @@ def start(
     return job_out(jobs_of(request).submit(version_id, body, author))
 
 
+@router.get("/simulations/compare")
+def compare_jobs(a: int, b: int, s: SessionDep) -> dict[str, Any]:
+    """SIM-05: two finished runs side by side (declared before ``/simulations/{job_id}``)."""
+    jobs = [s.get(JobRow, i) for i in (a, b)]
+    if any(j is None for j in jobs):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "simulation not found")
+    unfinished = [j.id for j in jobs if j is not None and j.status != "done"]
+    if unfinished:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"simulation {unfinished[0]} has not finished")
+    return compare(*(job_out(j) for j in jobs if j is not None))
+
+
 @router.get("/simulations/{job_id}")
 def read(job_id: int, s: SessionDep) -> dict[str, Any]:
     job = s.get(JobRow, job_id)
@@ -171,6 +185,7 @@ def list_jobs(s: SessionDep, version_id: int | None = None) -> list[dict[str, An
 def create_app(db: Database | None = None, fetch_version: FetchVersion = http_fetch_version) -> FastAPI:
     """Build the service; tests pass an in-memory database and a fake designer."""
     app = FastAPI(title="AdaptiveCare simulator", version="0.5.0")
+    app.state.metrics = instrument(app, "simulator")
     app.state.jobs = Jobs(db or Database(make_engine()), fetch_version)
     app.include_router(router)
     return app

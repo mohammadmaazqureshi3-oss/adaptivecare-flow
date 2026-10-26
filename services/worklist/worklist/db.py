@@ -26,9 +26,7 @@ def now() -> datetime:
 
 def iso(dt: datetime | None) -> str | None:
     """ISO 8601 in UTC. SQLite returns stored times without a zone; they were written in UTC."""
-    if dt is None:
-        return None
-    return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).isoformat()
+    return None if dt is None else aware(dt).isoformat()
 
 
 class Base(DeclarativeBase):
@@ -60,6 +58,7 @@ class TaskRow(Base):
     assignee: Mapped[str | None] = mapped_column(String(254), nullable=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # MON-02
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -91,6 +90,11 @@ class NotificationRow(Base):
     message: Mapped[str] = mapped_column(String(500))
     case_id: Mapped[str] = mapped_column(String(36), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+def aware(dt: datetime) -> datetime:
+    """SQLite returns stored times without a zone; they were written in UTC."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def make_engine(url: str | None = None) -> Engine:

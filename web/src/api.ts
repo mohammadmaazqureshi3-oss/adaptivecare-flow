@@ -201,7 +201,96 @@ export interface Task {
   assignee: string | null;
   result: Record<string, unknown> | null;
   created_at: string;
+  claimed_at?: string | null;
   completed_at: string | null;
+}
+
+// ---- Sprint 7: monitoring (MON-01..03), alerts (WRK-03), comparison (SIM-05) ----
+
+export interface CaseSummary {
+  case_id: string;
+  pathway: string;
+  version: number;
+  patient_id: string;
+  status: "running" | "completed" | "failed" | "compensated" | "cancelled";
+  reason: string;
+  started_at: string;
+  ended_at: string | null;
+  events: number;
+}
+
+export interface CaseEvent {
+  id: number;
+  type: string;
+  token_id: string;
+  at: string;
+  detail: Record<string, unknown>;
+}
+
+export interface CaseDetail extends CaseSummary {
+  history: CaseEvent[];
+  journey: CaseSummary[];
+}
+
+export interface Dashboard {
+  at: string;
+  hours: number;
+  active_cases: Record<string, number>;
+  ended_cases: Record<string, number>;
+  queues: Record<string, { open: number; oldest_min: number; overdue: number }>;
+  waits: Record<string, { claimed: number; mean_min: number; p90_min: number | null }>;
+  deadlines: { with_deadline: number; missed: number; missed_rate: number | null; escalated: number };
+}
+
+export interface ServiceStatus {
+  service: string;
+  status: string;
+  uptime_s?: number;
+  requests?: number;
+  server_errors?: number;
+  p95_ms?: number | null;
+  gauges?: Record<string, number>;
+  health?: Record<string, unknown>;
+}
+
+export interface AlertContact {
+  id: number;
+  role: string;
+  channel: "email" | "sms";
+  address: string;
+  name: string;
+  active: boolean;
+}
+
+export interface Delivery {
+  id: number;
+  notification_id: number;
+  channel: "email" | "sms";
+  address: string;
+  text: string;
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+  last_error: string;
+  sent_at: string | null;
+}
+
+export interface MetricComparison {
+  metric: string;
+  a: EstimateOut | null;
+  b: EstimateOut | null;
+  better_is: "lower" | "higher" | null;
+  difference: number | null;
+  distinct: boolean;
+  better: "a" | "b" | null;
+}
+
+export interface Comparison {
+  a: { id: number; pathway: string; version: number; kind: string };
+  b: { id: number; pathway: string; version: number; kind: string };
+  same_pathway_version: boolean;
+  changes: { setting: string; a: unknown; b: unknown }[];
+  metrics: MetricComparison[];
+  distinct: number;
 }
 
 export class ApiError extends Error {
@@ -348,4 +437,22 @@ export const api = {
   completeTask: (id: number, outputs: Record<string, unknown>, reason?: string) =>
     request<Task>("POST", `/tasks/${id}/complete`, { outputs, reason }),
   failTask: (id: number, reason: string) => request<Task>("POST", `/tasks/${id}/fail`, { reason }),
+
+  cases: (filters: { status?: string; pathway?: string; patient?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
+    return request<CaseSummary[]>("GET", `/cases${q.size ? `?${q}` : ""}`);
+  },
+  caseDetail: (id: string) => request<CaseDetail>("GET", `/cases/${encodeURIComponent(id)}`),
+  dashboard: (hours = 24) => request<Dashboard>("GET", `/dashboard?hours=${hours}`),
+  services: () => request<ServiceStatus[]>("GET", "/monitor/services"),
+
+  alertContacts: () => request<AlertContact[]>("GET", "/alert-contacts"),
+  addAlertContact: (c: { role: string; channel: "email" | "sms"; address: string; name: string }) =>
+    request<AlertContact>("POST", "/alert-contacts", c),
+  setAlertContact: (id: number, active: boolean) =>
+    request<AlertContact>("PATCH", `/alert-contacts/${id}`, { active }),
+  deliveries: () => request<Delivery[]>("GET", "/deliveries"),
+
+  compareSimulations: (a: number, b: number) =>
+    request<Comparison>("GET", `/simulations/compare?a=${a}&b=${b}`),
 };

@@ -17,6 +17,7 @@ from care_events import Bus, OutboxRelay
 from care_events.rabbit import RabbitBus
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pathway_core import Pathway
+from service_metrics import instrument
 from sqlalchemy import select
 
 from engine.service import EngineService, Scheduler
@@ -119,5 +120,7 @@ def create_app(pathway: Pathway | None = None, store: Store | None = None, bus: 
         title=f"AdaptiveCare engine {pathway.id} v{pathway.version}", version="0.3.0", lifespan=lifespan
     )
     app.state.engine, app.state.scheduler = svc, scheduler
+    app.state.metrics = metrics = instrument(app, "engine")
+    metrics.gauge("engine_running_cases", "Cases still running in this engine.", svc.running_cases)
     app.include_router(router)
     return app

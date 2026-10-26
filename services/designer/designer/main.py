@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request,
 from pathway_core import ModelError, Pathway
 from pathway_core.conditions import ConditionSyntaxError, parse, typecheck
 from pydantic import BaseModel, Field
+from service_metrics import instrument
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -298,6 +299,7 @@ def create_app(
             the_bus.stop()
 
     app = FastAPI(title="AdaptiveCare designer", version="0.4.0", lifespan=lifespan)
+    app.state.metrics = instrument(app, "designer")
     app.state.db, app.state.verify = database, verify
     app.include_router(router)
     return app

@@ -1,0 +1,16 @@
+# MON-03: Prometheus scrapes every service's /metrics (service-metrics package).
+# Start with: docker compose --profile monitoring up -d   then open http://localhost:9090
+# Engine containers are not scraped: discovering them needs the Docker socket, which only
+# the deployer may reach (NFR-SEC-04). Each engine still serves /metrics on its own port.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: services
+    # If METRICS_TOKEN is set in .env, put the same value in monitoring/metrics_token
+    # and uncomment the two lines below.
+    # authorization:
+    #   credentials_file: /etc/prometheus/metrics_token
+    static_configs:
+      - targets: [gateway:8000, auth:8000, designer:8000, verifier:8000, simulator:8000,
+                  deployer:8000, worklist:8000, patient:8000, ml:8000, scores:8000]

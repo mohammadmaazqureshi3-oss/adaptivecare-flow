@@ -22,6 +22,7 @@ from typing import Any
 from care_events import Bus, Event
 from care_events.rabbit import RabbitBus
 from fastapi import FastAPI
+from service_metrics import instrument
 
 from ml.model import Prediction, UrgencyModel
 
@@ -84,6 +85,7 @@ def create_app(bus: Bus | None = None, model_path: str | Path | None = None) -> 
             the_bus.stop()
 
     app = FastAPI(title="AdaptiveCare ml", version="0.6.0", lifespan=lifespan)
+    app.state.metrics = instrument(app, "ml")
     app.state.predictor = predictor
 
     @app.get("/health")

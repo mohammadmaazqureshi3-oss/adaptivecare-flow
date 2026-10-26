@@ -4,7 +4,8 @@ All services share one in-memory bus (care_events.InMemoryBus) in place of Rabbi
 keep their data in SQLite files under .dev/. Ports match the services' Compose roles:
 
     gateway 8000 · auth 8001 · designer 8002 · verifier 8003 · patient 8004
-    worklist 8005 · ml 8006 · deployer 8007 · simulator 8008 · engines from 8010 (one per deployed version)
+    worklist 8005 · ml 8006 · deployer 8007 · simulator 8008 · scores 8009
+    engines from 8010 (one per deployed version)
 
 Engines: the deployer (DEP-01) runs here with a local runtime, so pressing Deploy as an
 admin starts that version's engine inside this process instead of a Docker container.
@@ -37,6 +38,7 @@ PORTS = {
     "ml": 8006,
     "deployer": 8007,
     "simulator": 8008,
+    "scores": 8009,
 }
 log = logging.getLogger("dev_stack")
 
@@ -87,6 +89,7 @@ class Stack:
         from patient.db import Database as PatientDB
         from patient.db import make_engine as patient_engine
         from patient.main import create_app as patient_app
+        from scores.main import create_app as scores_app
         from simulator.db import Database as SimulatorDB
         from simulator.db import make_engine as simulator_engine
         from simulator.main import create_app as simulator_app
@@ -108,7 +111,8 @@ class Stack:
             worklist_app(WorklistDB(worklist_engine(sqlite("worklist"))), self.bus),
             PORTS["worklist"],
         )
-        self.serve("ml (placeholder)", ml_app(self.bus), PORTS["ml"])
+        self.serve("ml", ml_app(self.bus), PORTS["ml"])
+        self.serve("scores", scores_app(self.bus), PORTS["scores"])
         self.serve("gateway", gateway_app(), PORTS["gateway"])
         runtime = LocalRuntime(self.start_engine, self.stop_engine)
         deployer = deployer_app(DeployerDB(deployer_engine(sqlite("deployer"))), self.bus, runtime)

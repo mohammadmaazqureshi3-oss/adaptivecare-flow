@@ -6,10 +6,12 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pathway_core import ModelError, Pathway
+from service_metrics import instrument
 
 from verifier.algorithm import DEFAULT_LIMIT, verify
 
 app = FastAPI(title="AdaptiveCare verifier", version="0.1.0")
+app.state.metrics = instrument(app, "verifier")
 
 
 @app.get("/health")
