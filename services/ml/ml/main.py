@@ -22,7 +22,7 @@ from typing import Any
 from care_events import Bus, Event
 from care_events.rabbit import RabbitBus
 from fastapi import FastAPI
-from service_metrics import instrument
+from service_metrics import case_context, instrument
 
 from ml.model import Prediction, UrgencyModel
 
@@ -49,6 +49,10 @@ class Predictor:
         self.bus, self.model = bus, model
 
     def on_event(self, request: Event) -> None:
+        with case_context(request.case_id):  # every log line carries the case id (C4-06)
+            self._handle(request)
+
+    def _handle(self, request: Event) -> None:
         if self.model is None:
             reason = "no urgency model is installed (run services/ml/training/train.py)"
             self.bus.publish(request.reply("TaskFailed", {"reason": reason, "temporary": False}))

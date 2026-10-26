@@ -48,6 +48,28 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  e2e:
+    # Browser tests (plan Section 14): the platform in one process, the demo data, the web app,
+    # then Playwright's Chromium.
+    needs: [quality, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: python -m venv .venv && .venv/bin/pip install -e packages/pathway-core -e packages/care-events -e packages/service-metrics -r requirements-dev.txt
+      - run: ./scripts/dev.sh > stack.log 2>&1 &
+      - run: for i in $(seq 1 60); do curl -sf localhost:8000/health && break; sleep 1; done
+      - run: PYTHONPATH=packages/pathway-core/src .venv/bin/python scripts/seed_demo.py
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: web
+      - run: (npm run dev > vite.log 2>&1 &) && sleep 5 && E2E_CHANNEL=chromium npm run e2e
+        working-directory: web
+
   secrets:
     runs-on: ubuntu-latest
     steps:

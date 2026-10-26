@@ -86,6 +86,8 @@ reproduces the full catalogue from `contracts/events.md`.
   mode and complaint, never a name or birth date. Alerts carry the record number, never a name.
 - **Encryption at rest** — patient name and birth date are Fernet tokens; search uses a blind
   index of keyed hashes; the key comes from the environment (NFR-SEC-05, chapter 13).
+- **Transport** — the web server serves HTTPS only (TLS 1.2/1.3, HSTS and other security headers);
+  plain HTTP redirects (decision 0009).
 - **Scans** — bandit and pip-audit in CI; gitleaks for secrets (NFR-SEC-06).
 
 Known limits, stated in decision 0002 and chapter 16: a compromised container inside the network

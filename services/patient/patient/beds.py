@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from care_events import Event, add_to_outbox, first_time
+from service_metrics import case_context
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -39,6 +40,10 @@ class BedService:
         self.db = db
 
     def on_event(self, event: Event) -> None:
+        with case_context(event.case_id):  # every log line carries the case id (C4-06)
+            self._handle(event)
+
+    def _handle(self, event: Event) -> None:
         with self.db.sessions.begin() as s:
             if not first_time(s, event.event_id):
                 return

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from service_metrics import instrument
@@ -58,3 +59,56 @@ def test_mon03_a_metrics_token_protects_both_endpoints() -> None:
     ok = {"Authorization": "Bearer scrape-secret"}
     assert c.get("/metrics", headers=ok).status_code == 200
     assert c.get("/metrics.json", headers=ok).json()["requests"] == 0
+
+
+# ---- C4-06: structured logs with case ids -----------------------------------------------------
+
+
+def test_c4_06_log_lines_are_json_with_the_case_id() -> None:
+    import json
+    import logging
+
+    from service_metrics.logs import JsonFormatter, case_context
+
+    formatter = JsonFormatter("worklist")
+    record = logging.LogRecord("engine", logging.INFO, __file__, 1, "%s handled", ("TaskCompleted",), None)
+    record.event_type, record.status = "TaskCompleted", "running"
+    with case_context("case-7"):
+        line = json.loads(formatter.format(record))
+    assert line["case_id"] == "case-7" and line["msg"] == "TaskCompleted handled"
+    assert line["service"] == "engine"  # the logger's service, not the process's (one-process dev stack)
+    assert line["event_type"] == "TaskCompleted" and line["status"] == "running" and line["level"] == "INFO"
+    outside = json.loads(formatter.format(logging.LogRecord("care_events.bus", 20, "", 1, "x", None, None)))
+    assert outside["case_id"] is None and outside["service"] == "worklist"
+
+
+def test_c4_06_errors_keep_their_traceback() -> None:
+    import json
+    import logging
+    import sys
+
+    from service_metrics.logs import JsonFormatter
+
+    try:
+        raise ValueError("bad")
+    except ValueError:
+        record = logging.LogRecord("ml", logging.ERROR, "", 1, "failed", None, sys.exc_info())
+    assert "ValueError: bad" in json.loads(JsonFormatter("ml").format(record))["exc"]
+
+
+def test_c4_06_logging_is_installed_once_and_can_be_plain(monkeypatch: pytest.MonkeyPatch) -> None:
+    import logging
+
+    from service_metrics.logs import configure_logging
+
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    try:
+        root.handlers = [h for h in root.handlers if not getattr(h, "_adaptivecare_handler", False)]
+        monkeypatch.setenv("LOG_FORMAT", "text")
+        configure_logging("auth")
+        configure_logging("auth")
+        ours = [h for h in root.handlers if getattr(h, "_adaptivecare_handler", False)]
+        assert len(ours) == 1 and not type(ours[0].formatter).__name__.startswith("Json")
+    finally:
+        root.handlers = saved

@@ -49,7 +49,7 @@ the end-to-end system tests) show the files in the last column.
 | WRK-03 | Should | 3 | 7 | Email or SMS alert on escalation | 7 (worklist) | U02, U03, U17, U31 | 0007 |
 | MON-01 | Must | 3 | 7 | Any case's full history | 2 (worklist) | U03, U13, U31 | 0007 |
 | MON-02 | Should | 5 | 7 | Dashboards | 2 (worklist) | U03, U17 | 0007 |
-| MON-03 | Could | 3 | 7 | Service health and metrics | 5 (gateway, service-metrics) | U03, U06, U31 | 0007 |
+| MON-03 | Could | 3 | 7 | Service health and metrics | 7 (gateway, service-metrics, tests/scripts/test_monitoring_config.py) | U03, U06, U31 | 0007 |
 | SIM-05 | Could | 3 | 7 | Compare two scenarios | 7 (simulator) | U02 | 0007 |
 | MIG-01 | Won't | 13 | — | Migrate running cases (stretch) | 0 (—) | — | — |
 
@@ -81,5 +81,5 @@ the end-to-end system tests) show the files in the last column.
 | NFR-ORG-02 | 0 | repository: Python 3.12 / FastAPI services, React + React Flow web | — | — |
 | NFR-EXT-01 | 0 | synthetic data only (docs/ml/model-card.md) | — | — |
 
-Tests in the repository: 271 test functions (parametrised cases counted once).
+Tests in the repository: 280 test functions (parametrised cases counted once).
 Stories without a test carrying their ID: none.

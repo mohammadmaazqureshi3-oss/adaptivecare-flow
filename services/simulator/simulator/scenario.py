@@ -6,15 +6,30 @@ that is how people think about them.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 from pathway_core import Pathway
 from pathway_core.conditions import names, parse
 from pathway_core.settings import duration, settings_issues
 
-# Illustrative urgency mix (levels 1..5) until ML-01 (Sprint 6) measures the KTAS dataset's.
-DEFAULT_URGENCY_MIX = {1: 0.03, 2: 0.17, 3: 0.40, 4: 0.30, 5: 0.10}
+# Illustrative urgency mix (levels 1..5), used only if the training data's mix is missing.
+ILLUSTRATIVE_MIX = {1: 0.03, 2: 0.17, 3: 0.40, 4: 0.30, 5: 0.10}
+MIX_FILE = Path(__file__).with_name("urgency_mix.json")
+
+
+def load_default_mix(path: Path = MIX_FILE) -> tuple[dict[int, float], str]:
+    """The urgency mix of the model's training data (written by ml/training/train.py, plan
+    Section 11), and where it came from; the illustrative mix if the file is not there."""
+    if not path.exists():
+        return dict(ILLUSTRATIVE_MIX), "illustrative (no training data mix)"
+    doc = json.loads(path.read_text())
+    return {int(level): float(share) for level, share in doc["mix"].items()}, str(doc["source"])
+
+
+DEFAULT_URGENCY_MIX, URGENCY_MIX_SOURCE = load_default_mix()
 PROB_TOLERANCE = 1e-6
 
 

@@ -34,7 +34,7 @@ how tests caught them recorded.
 Measured results: verification in 0.04 s (target 2 s); engine event handling p95 3 ms at
 250 events per second (target 200 ms at 50); 30 simulation replications of 7 days in 5.0 s
 (target 60 s); model prediction p95 11 ms (target 100 ms); Erlang C inside the simulated
-interval in 92 of 100 experiments (target 90); 92.8% test coverage over 652 automated tests.
+interval in 92 of 100 experiments (target 90); 94.3% statement coverage over 664 automated tests.
 Limits are stated where they apply: the model is trained on synthetic data, the Docker and
 RabbitMQ paths have not been run on the measuring machine, the alpha usability test is still
 to be held, and the increments were built in two days rather than the sixteen weeks planned.

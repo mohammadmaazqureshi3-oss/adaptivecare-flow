@@ -20,6 +20,7 @@ from typing import Any
 
 from care_events import Event, OutboxRelay, add_to_outbox, derived_id
 from pathway_core import Pathway
+from service_metrics import case_context
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -90,7 +91,7 @@ class EngineService:
         if case_id is None:
             log.warning("dropping %s without a case id", event.type)
             return
-        with self._lock(case_id):
+        with case_context(case_id), self._lock(case_id):
             with self.store.sessions.begin() as s:
                 if s.scalar(select(CaseEventRow.seq).where(CaseEventRow.event_id == event.event_id)):
                     return  # duplicate (I1)
@@ -108,6 +109,14 @@ class EngineService:
             self.relay.notify()
 
     def _commit(self, s: Session, case: Case, event: Event, outbound: list[Event]) -> None:
+        log.info(
+            "%s handled: case %s, %d event(s) out",
+            event.type,
+            case.status,
+            len(outbound),
+            extra={"event_type": event.type, "event_id": event.event_id, "pathway": self.pathway.id,
+                   "version": self.pathway.version, "status": case.status},
+        )  # fmt: skip
         row = CaseEventRow(event_id=event.event_id, case_id=case.id, event_json=event.to_json())
         s.add(row)
         for e in outbound:

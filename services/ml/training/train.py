@@ -265,6 +265,19 @@ the uncalibrated {m["selected"]}).
 """
 
 
+def write_urgency_mix(class_counts: dict[str, int], source: str, version: str, path: Path) -> dict[str, Any]:
+    """Plan Section 11: the dataset also gives the Simulator its urgency mix. Written beside the
+    simulator's code as data (no run-time link between the services)."""
+    total = sum(class_counts.values())
+    mix = {
+        str(level): round(n / total, 4) for level, n in sorted(class_counts.items(), key=lambda x: int(x[0]))
+    }
+    mix[max(mix, key=lambda k: mix[k])] += round(1 - sum(mix.values()), 4)  # rounding remainder
+    doc = {"source": source, "model_version": version, "records": total, "mix": mix}
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+    return doc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ktas", default=str(SERVICE.parents[1] / "data" / "ktas" / "data.csv"))
@@ -284,6 +297,8 @@ def main() -> None:
     docs.mkdir(parents=True, exist_ok=True)
     (docs / "model-card.md").write_text(model_card(artifact))
     (docs / "metrics.json").write_text(json.dumps(artifact["metrics"], indent=2))
+    mix_file = SERVICE.parents[0] / "simulator" / "simulator" / "urgency_mix.json"
+    write_urgency_mix(artifact["metrics"]["class_counts"], source, version, mix_file)
     print(
         json.dumps(artifact["metrics"]["test"] | {"selected": artifact["metrics"]["selected"]}, indent=2)[
             :1500

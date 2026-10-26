@@ -4,7 +4,8 @@
 template (``/tasks/{task_id}/claim``, never the concrete path, so ids stay out of the
 metrics), and serves them at ``/metrics`` (Prometheus text format) and ``/metrics.json``
 (for the admin's service page). Services add gauges for their own state, e.g. open tasks.
-If ``METRICS_TOKEN`` is set, both endpoints need it as a bearer token.
+If ``METRICS_TOKEN`` is set, both endpoints need it as a bearer token. It also installs the
+structured logs (``service_metrics.logs``, plan C4-06).
 """
 
 from __future__ import annotations
@@ -20,6 +21,10 @@ from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
+
+from service_metrics.logs import case_context, configure_logging
+
+__all__ = ["Metrics", "case_context", "configure_logging", "instrument"]
 
 BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0)  # seconds
 UNMATCHED = "<unmatched>"
@@ -116,6 +121,7 @@ def _allowed(request: Request, token: str | None) -> bool:
 
 def instrument(app: Starlette, service: str, token: str | None = None) -> Metrics:
     """Add the middleware and the two endpoints. Call before adding catch-all routes."""
+    configure_logging(service)  # structured logs (C4-06), once per process
     metrics = Metrics(service)
     token = token if token is not None else os.environ.get("METRICS_TOKEN") or None
 

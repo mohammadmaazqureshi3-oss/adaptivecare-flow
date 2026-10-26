@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from care_events import Event
+from service_metrics import case_context
 from sqlalchemy import JSON, DateTime, Integer, String, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -66,6 +67,10 @@ class Monitor:
         self.db = db
 
     def on_event(self, event: Event) -> None:
+        with case_context(event.case_id):  # every log line carries the case id (C4-06)
+            self._handle(event)
+
+    def _handle(self, event: Event) -> None:
         if not event.case_id:
             return  # e.g. PatientRegistered: not yet a case
         try:

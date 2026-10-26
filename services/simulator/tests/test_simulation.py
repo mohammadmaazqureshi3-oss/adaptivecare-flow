@@ -160,3 +160,31 @@ def test_sim02_every_metric_has_an_interval_precise_enough_or_the_cap_is_reporte
 def test_noisy_scenario_reports_the_cap() -> None:
     res = replicate(triage(), scenario(days=0.3, warmup_days=0.05), max_reps=12)
     assert res.replications == 12 and res.cap_reached
+
+
+# ---- plan Section 11: the urgency mix comes from the model's training data -----------------------
+
+
+def test_default_urgency_mix_is_the_training_datas() -> None:
+    import json
+    from pathlib import Path
+
+    from simulator.scenario import DEFAULT_URGENCY_MIX, URGENCY_MIX_SOURCE
+
+    counts = json.loads((Path(__file__).parents[3] / "docs" / "ml" / "metrics.json").read_text())[
+        "class_counts"
+    ]
+    total = sum(counts.values())
+    assert abs(sum(DEFAULT_URGENCY_MIX.values()) - 1) < 1e-9
+    for level, n in counts.items():
+        assert abs(DEFAULT_URGENCY_MIX[int(level)] - n / total) < 1e-3
+    assert URGENCY_MIX_SOURCE.startswith("synthetic-v1")  # until the KTAS file is used
+
+
+def test_without_the_mix_file_the_illustrative_mix_is_used(tmp_path: object) -> None:
+    from pathlib import Path
+
+    from simulator.scenario import ILLUSTRATIVE_MIX, load_default_mix
+
+    mix, source = load_default_mix(Path(str(tmp_path)) / "absent.json")
+    assert mix == ILLUSTRATIVE_MIX and source.startswith("illustrative")

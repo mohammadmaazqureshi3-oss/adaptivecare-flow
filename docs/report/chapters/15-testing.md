@@ -9,7 +9,7 @@ testing, release testing and user testing, plus a special test that proves each 
 |-------|----------------|-----|--------|
 | Development: unit | Every token rule; the condition parser with partition and boundary values; each algorithm's functions; task settings | pytest, Hypothesis; test-first for pathway-core | pass |
 | Development: component | Each service with its own database and the in-memory bus | pytest, FastAPI test client, SQLite | pass |
-| Development: system | The services together, end to end | in-process system tests, every message delivered twice | 8 system tests pass; the Compose and RabbitMQ run is open |
+| Development: system | The services together, end to end | in-process system tests, every message delivered twice; Playwright in Chrome against the running platform | 8 system tests and 3 browser tests pass; the Compose and RabbitMQ run is open |
 | Release: requirements-based | One automated test per acceptance criterion, named by story or NFR ID | traceability in appendix A | every story has a test |
 | Release: scenario | Triage, Assessment and Visit end to end | `tests/system/test_clinical_pathways.py` | pass |
 | Release: performance | The NFR-PERF targets | timed tests, engine load test | all four met (chapter 16) |
@@ -17,7 +17,7 @@ testing, release testing and user testing, plus a special test that proves each 
 | User: alpha | 3–5 classmates in the five roles, SUS questionnaire | `docs/alpha-test/` | **not yet run** |
 | User: acceptance | The professor's requirements, row by row | `docs/closure/acceptance.md` | chapter 16 |
 | Inspections | Code against the checklist; UML against the code | review per increment; `docs/closure/uml-check.md` | 16 diagrams updated and 3 regenerated in Closure |
-| Regression | The whole suite | before every tag | 639 Python and 13 web tests pass |
+| Regression | The whole suite | before every tag | 648 Python, 13 web unit and 3 browser tests pass |
 
 : Table 15.1 — Results by test stage.
 
@@ -41,7 +41,7 @@ testing, release testing and user testing, plus a special test that proves each 
 {{chart growth "Figure 15.1 — Python test functions and code lines at each sprint tag."}}
 
 Test functions grew from 53 to 267 across the tags, in step with the code. Parametrised tests make
-the executed count larger: 639 Python tests and 13 web tests run in the final suite.
+the executed count larger: 648 Python tests, 13 web unit tests and 3 browser tests run in the final suite.
 
 ### Coverage
 
@@ -52,19 +52,22 @@ reported (NFR-MNT-01). Table 15.3 gives both for every package.
 |---------|-----------:|-------------------:|----------------:|
 | pathway-core | 622 | **98.7%** | 95.7% |
 | verifier | 354 | **98.9%** | 96.4% |
-| engine | 608 | **92.9%** | 81.8% |
-| simulator | 662 | **97.0%** | 91.7% |
-| worklist | 572 | 97.0% | 88.5% |
-| patient | 296 | 97.6% | 85.4% |
+| engine | 618 | **92.6%** | 80.0% |
+| simulator | 671 | **97.0%** | 91.8% |
+| worklist | 579 | 97.1% | 88.5% |
+| patient | 300 | 97.7% | 85.4% |
 | designer | 238 | 92.9% | 67.6% |
 | auth | 204 | 94.6% | 76.3% |
 | gateway | 123 | 98.4% | 100% |
-| ml | 155 | 91.6% | 80.8% |
-| scores | 84 | 97.6% | 80.0% |
-| service-metrics | 92 | 100% | 100% |
+| ml | 158 | 91.8% | 80.8% |
+| scores | 87 | 97.7% | 80.0% |
+| service-metrics | 134 | 100% | 100% |
 | deployer | 325 | 82.2% | 58.3% |
 | care-events | 300 | 78.7% | 71.4% |
-| **Total** | **4,635** | **92.8%** | **86.6%** |
+| **Total** | **4,713** | **94.3%** | **86.5%** |
+
+coverage.py's single combined figure (statements and branches together), which the CI gate checks
+against 80%, is 92.9%.
 
 : Table 15.3 — Coverage by package (core packages in bold).
 
@@ -119,7 +122,7 @@ evidence for each.
 | Performance | Four measured targets met with a wide margin; performance of pathways predicted by simulation (Algorithm 3) |
 | Usability | Errors on the canvas with a step-by-step replay; intervals on every simulated figure; the SUS test is still open |
 | Verifiability | Every requirement has a test (appendix A); deterministic engine and simulator (same input, same output) |
-| Maintainability | 92.8% coverage; complexity ≤ 10; strict typing; decision records; diagrams checked against code |
+| Maintainability | 94.3% statement and 86.5% branch coverage; complexity ≤ 10; strict typing; decision records; diagrams checked against code |
 | Reusability | One `pathway-core` for three algorithms; `care-events` and `service-metrics` shared by the services |
 | Portability | Docker images for every service; the development stack runs without Docker (the Compose start is unverified) |
 | Interoperability | REST and JSON events with a written contract; a new task type plugs in by subscribing to a routing key (CLN-04) |

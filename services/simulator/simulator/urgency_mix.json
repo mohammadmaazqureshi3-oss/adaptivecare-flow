@@ -1,0 +1,12 @@
+{
+  "source": "synthetic-v1 (6000 records, seed 7)",
+  "model_version": "urgency-v1-synthetic",
+  "records": 6000,
+  "mix": {
+    "1": 0.035,
+    "2": 0.1547,
+    "3": 0.3863,
+    "4": 0.3135,
+    "5": 0.1105
+  }
+}

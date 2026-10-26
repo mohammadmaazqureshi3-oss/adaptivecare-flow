@@ -15,3 +15,6 @@ dist/
 .dev/
 *.db
 docs/report/build/
+tls/
+web/test-results/
+web/playwright-report/

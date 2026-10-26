@@ -63,7 +63,7 @@ A small shared package, `service-metrics`, gives every service request counts, e
 latency histogram per **route template** (`/tasks/{task_id}/claim`, so ids never become labels), in
 Prometheus format at `/metrics` and as JSON at `/metrics.json`, plus service-specific gauges such as
 open tasks or running cases. The gateway combines every service's health and metrics for the admin.
-Prometheus is an optional Compose profile. It does not scrape engines, because finding them needs
+Prometheus (with Grafana, added in Closure) is an optional Compose profile. It does not scrape engines, because finding them needs
 the Docker socket, which only the deployer may reach (NFR-SEC-04).
 
 ### A new task type: NEWS2 (CLN-04)

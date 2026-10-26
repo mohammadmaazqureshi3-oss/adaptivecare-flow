@@ -19,7 +19,7 @@ from typing import Any
 from care_events import Bus, Event
 from care_events.rabbit import RabbitBus
 from fastapi import FastAPI
-from service_metrics import instrument
+from service_metrics import case_context, instrument
 
 from scores.news2 import news2
 
@@ -37,6 +37,10 @@ class Scorer:
         self.bus = bus
 
     def on_event(self, request: Event) -> None:
+        with case_context(request.case_id):  # every log line carries the case id (C4-06)
+            self._handle(request)
+
+    def _handle(self, request: Event) -> None:
         try:
             result = news2(request.payload.get("inputs", {}))
         except ValueError as exc:  # missing or unreadable observations: retrying will not help

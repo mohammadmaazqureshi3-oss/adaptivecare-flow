@@ -14,7 +14,7 @@ SQLite and the in-memory bus (Docker was not available; see "Not measured").
 | NFR-SEC-01/02 | Tokens; permission matrix | every rule × every role | `test_nfr_sec02_permission_matrix` (gateway) | met |
 | NFR-SEC-05 | Name and birth date encrypted; key outside the repository | raw-database inspection finds no name or date | `test_nfr_sec05_…` | met |
 | NFR-SEC-06 | No high findings (bandit, pip-audit) | 0 bandit issues; pip-audit: no known vulnerabilities in any requirements file | CI security job | met |
-| NFR-MNT-01 | ≥ 80% coverage | 92.8% (statements and branches) | `pytest --cov` | met |
+| NFR-MNT-01 | ≥ 80% coverage | 94.3% statements, 86.5% branches (92.9% combined) | `pytest --cov` | met |
 | NFR-MNT-02 | Complexity ≤ 10; ruff, mypy | radon: no function above 10; ruff and mypy --strict clean | CI | met |
 | NFR-MNT-03 | New task type without engine change | NEWS2 service (CLN-04) | `services/scores`, clinical system tests | met |
 | NFR-USE-02 | SUS ≥ 70 in an alpha test | not yet run | `docs/alpha-test/` | open |

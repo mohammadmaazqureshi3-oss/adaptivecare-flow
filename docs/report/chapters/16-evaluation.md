@@ -22,7 +22,7 @@ Every NFR was measured, and the ones not met are reported with the reason (plan 
 | NFR-PERF-04 | ML p95 ≤ 100 ms | 11 ms | met |
 | NFR-USE-01 | Errors on the canvas ≤ 2 s; step-by-step replay | Verify answers in under 1 ms on the server; replay implemented and tested | met |
 | NFR-USE-02 | SUS ≥ 70 in an alpha test | not yet run | **open** |
-| NFR-MNT-01 | ≥ 80% coverage on the core packages | 92.9–98.9% on the four core packages; 92.8% overall | met |
+| NFR-MNT-01 | ≥ 80% coverage on the core packages | 92.6–98.9% on the four core packages; 94.3% overall (branches 86.5%) | met |
 | NFR-MNT-02 | Complexity ≤ 10; ruff and mypy | no function above 10; both pass | met |
 | NFR-MNT-03 | New task type without engine change | NEWS2 service | met |
 | NFR-POR-01 | One-command start on macOS and Linux | not run (no Docker on the measuring machine) | **open** |
@@ -79,6 +79,13 @@ by the repository.
    person's work is non-preemptive. The advisor is greedy and matched the optimum only on the small
    case where the optimum could be computed.
 7. **No case cancellation.** "Cancelled" exists as a final status, but no action cancels a whole case.
+8. **Smaller plan items.** The final audit (`docs/closure/acceptance.md`) found plan items no story
+   covered. Five were then built (decision 0009): structured JSON logs with case ids, HTTPS at the
+   web server, Grafana, the simulator's urgency mix from the training data, and Playwright browser
+   tests. HTTPS and Grafana are configured and tested for consistency but, like all Docker parts,
+   not seen running. Still missing: Testcontainers, per-sprint review videos and task boards. The
+   model is trained by a script rather than a notebook, and three REST routes carry other names than
+   in the plan's table.
 
 ## Ethics
 

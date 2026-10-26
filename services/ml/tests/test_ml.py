@@ -194,3 +194,15 @@ def test_without_a_model_the_task_fails_permanently_so_the_fallback_runs(tmp_pat
 def test_the_shipped_model_file_loads() -> None:
     m = load_model()
     assert m is not None and m.version.startswith("urgency-v1")
+
+
+def test_training_writes_the_simulators_urgency_mix(tmp_path: Path) -> None:
+    import json
+
+    from training.train import write_urgency_mix
+
+    doc = write_urgency_mix(
+        {"1": 1, "2": 2, "3": 3, "4": 3, "5": 1}, "test data", "v0", tmp_path / "mix.json"
+    )
+    assert json.loads((tmp_path / "mix.json").read_text()) == doc
+    assert doc["mix"] == {"1": 0.1, "2": 0.2, "3": 0.3, "4": 0.3, "5": 0.1} and doc["records"] == 10

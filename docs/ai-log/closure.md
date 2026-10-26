@@ -26,6 +26,19 @@ Prompt: "ok do it for closure". Tool: Claude Code.
    share of code in the algorithms, the number of diagrams updated, and the defect counts of
    chapter 14 (recounted from the logs).
 
+## Final audit
+A last pass over the whole plan, with a fresh clone (639 tests pass), the full static gate, and a live
+end-to-end smoke test through the gateway. It found ten smaller plan items not delivered (listed in
+`docs/closure/acceptance.md`) and one demo problem: the seed did not restore the deadlock example
+after an earlier review had fixed it. The seed now resets it.
+
+## Closure additions (decision 0009)
+Built after the audit, on request: structured JSON logs with case ids (`service_metrics.logs`;
+seen in the dev stack), HTTPS at nginx (generated certificate; script tested locally, server not
+run), Grafana (provisioned dashboard; not run), the simulator's urgency mix from the training data,
+and Playwright browser tests (3, passing twice in a row against the dev stack in Chrome).
+Tests check the HTTPS and monitoring configuration against the code, since Docker is missing.
+
 ## Not done (needs the author)
 - PlantUML rendering (downloading PlantUML was not permitted in this session):
   `PLANTUML_JAR=… scripts/render_uml.sh`, then `scripts/build_report.py`.

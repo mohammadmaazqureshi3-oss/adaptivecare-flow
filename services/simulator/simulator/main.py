@@ -22,7 +22,13 @@ from sqlalchemy.orm import Session
 from simulator.advisor import advise
 from simulator.compare import compare
 from simulator.db import Database, JobRow, iso, make_engine, now
-from simulator.scenario import Scenario, human_roles, readiness_issues
+from simulator.scenario import (
+    DEFAULT_URGENCY_MIX,
+    URGENCY_MIX_SOURCE,
+    Scenario,
+    human_roles,
+    readiness_issues,
+)
 from simulator.stats import replicate
 
 log = logging.getLogger("simulator")
@@ -139,8 +145,13 @@ SessionDep = Annotated[Session, Depends(session)]
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "simulator"}
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": "simulator",
+        "urgency_mix": DEFAULT_URGENCY_MIX,
+        "urgency_mix_source": URGENCY_MIX_SOURCE,
+    }
 
 
 @router.post("/versions/{version_id}/simulations", status_code=status.HTTP_202_ACCEPTED)

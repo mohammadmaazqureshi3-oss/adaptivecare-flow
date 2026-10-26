@@ -30,7 +30,7 @@ proven from the repository).
 | P19 | Category 3 complexity evident in the design | Algorithms specified in the plan before code; UML in the repository, checked in Closure (`docs/closure/uml-check.md`) | ✅ |
 | P20 | AI tooling architecture | Report chapter 14, `CLAUDE.md` | ✅ |
 | P21 | Prompts, constraints, refinement documented | `CLAUDE.md`, `docs/ai-log/sprint-0..7.md` | ✅ |
-| P22 | V&V of AI output | Tests first, 652 tests (639 Python, 13 web), ruff/mypy/radon/bandit/pip-audit in CI; each AI log lists where the AI was wrong | ✅ |
+| P22 | V&V of AI output | Tests first, 664 tests (648 Python, 13 web unit, 3 browser), ruff/mypy/radon/bandit/pip-audit in CI; each AI log lists where the AI was wrong | ✅ |
 | P23 | You own and can explain the logic | Explain-back rule (CLAUDE.md rule 9); Q&A preparation in `docs/closure/rehearsal.md` | 👤 your explanation in the presentation |
 | E1 | Algorithmic, not merely computational | State-space search, orchestration with invariants, discrete-event simulation | ✅ |
 | E2 | Rule and policy customizability | Conditions, escalation chains, retries, answer timeouts, fallbacks, undo, override checks, announced events | ✅ |
@@ -73,6 +73,30 @@ All 45 Must/Should/Could stories are done (each has tests; see `traceability.md`
 5. **Data.** The urgency model is trained on synthetic data (risk R6); its figures prove the
    pipeline, not clinical accuracy.
 
+## Plan items not delivered (final audit, 2026-10-26)
+
+A last pass over the whole plan, beyond the backlog, found these smaller items missing or done
+differently. None is a backlog story; each is stated here and in report chapter 16.
+
+| Plan item | Where in the plan | State |
+|-----------|-------------------|-------|
+| Structured logs with case IDs | C4-06 | **Built after the audit** (decision 0009): JSON lines with `case_id`; seen working in the dev stack |
+| HTTPS | C4-03 | **Built after the audit** (decision 0009): nginx on 443 with TLS 1.2/1.3 and a generated certificate; configuration tested, not run (no Docker) |
+| Playwright tests of the web app | Section 14 (system, scenario) | **Built after the audit**: 3 browser tests in `web/e2e/`, passing against the dev stack |
+| Testcontainers (real PostgreSQL in component tests) | Section 14 | Not done: component tests use SQLite (needs Docker) |
+| Grafana | Section 9 (Should) | **Built after the audit**: provisioned dashboard in the `monitoring` profile; configuration tested, not run (no Docker) |
+| Training in a notebook | Section 11 | Done as a script (`services/ml/training/train.py`) instead |
+| Simulator urgency mix from the dataset | Section 11 | **Built after the audit**: the training data's mix is the simulator's default |
+| Review videos and screenshots per sprint; sprint task boards with hours | Section 13 | Not done |
+| REST names `/tasks/{id}/override`, `/cases/{id}/history`, `/dashboards` | Section 9 | Same function under other names: a reason on `/complete`, `/cases/{id}`, `/dashboard` |
+| A "triage records" table in the patient schema | Section 11 | Triage results live in the case history, not in a table |
+
+The audit also found and fixed one demo problem: the seed script did not restore the
+"Imaging (has a deadlock)" draft after it had been fixed in an earlier review, so demo step 1
+would have shown a SAFE pathway. `scripts/seed_demo.py` now resets it. The live smoke test
+(registration → Triage → Assessment → Visit → occupied bed, overrides, monitoring, security,
+Verify, Simulate) then passed 16 of 16 checks.
+
 ## What only you can do
 - Confirm the professor's approval (P14).
 - Run the alpha test with 3–5 classmates and score it (`docs/alpha-test/`).
@@ -81,3 +105,4 @@ All 45 Must/Should/Could stories are done (each has tests; see `traceability.md`
 - Render the diagrams (`PLANTUML_JAR=… scripts/render_uml.sh`), then rebuild the report so
   the figures appear.
 - Rehearse the talk three times and record the backup video.
+- Fill in "Kept / changed" in `docs/ai-log/sprint-0.md` (left for your own review).

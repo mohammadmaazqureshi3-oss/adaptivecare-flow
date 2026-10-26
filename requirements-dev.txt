@@ -20,3 +20,4 @@ mypy
 radon
 bandit
 pip-audit
+pyyaml==6.0.3

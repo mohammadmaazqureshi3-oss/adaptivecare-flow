@@ -163,7 +163,9 @@ class Stack:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    from service_metrics import configure_logging
+
+    configure_logging("dev_stack")  # JSON lines with case ids; LOG_FORMAT=text for plain lines
     logging.getLogger("care_events.bus").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     DEV.mkdir(exist_ok=True)

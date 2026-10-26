@@ -43,6 +43,24 @@ def token(c: httpx.Client, email: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def install_deadlock_example(c: httpx.Client, designer: dict[str, str]) -> None:
+    """The Verifier's worked example as an unfixed draft, so the demo can be repeated after someone
+    fixed and published it in an earlier run (a published version is never changed: a new draft)."""
+    model = json.loads((ROOT / "pathways" / "imaging_deadlock.json").read_text())
+    c.post("/pathways", json={"id": "imaging_deadlock", "name": "Imaging (has a deadlock)"}, headers=designer)
+    latest = c.get("/pathways/imaging_deadlock/versions", headers=designer).json()[-1]
+    current = c.get(f"/versions/{latest['id']}", headers=designer).json()["model"]
+    if latest["status"] == "draft" and current.get("nodes") == model["nodes"]:
+        print(f"pathway imaging_deadlock: v{latest['number']} is the deadlock draft")
+        return
+    if latest["status"] not in ("draft", "verified"):
+        latest = c.post("/pathways/imaging_deadlock/versions", headers=designer).json()
+    c.put(f"/versions/{latest['id']}", json={"model": model}, headers=designer).raise_for_status()
+    print(
+        f"pathway imaging_deadlock: v{latest['number']} reset to the deadlock draft (the Verifier's example)"
+    )
+
+
 def install_clinical(c: httpx.Client, designer: dict[str, str], admin: dict[str, str]) -> None:
     """CLN-01..03 the way a team would: a new version of each pathway, verified, published,
     deployed; older running versions are undeployed (drained) once the new one runs."""
@@ -90,13 +108,7 @@ def main() -> None:
             )
             print(f"user {email:32} {role:9} {'created' if r.status_code == 201 else r.json()['detail']}")
         designer = token(c, DEMO_USERS[0][1], DEMO_USERS[0][2])
-        r = c.post(
-            "/pathways", json={"id": "imaging_deadlock", "name": "Imaging (has a deadlock)"}, headers=designer
-        )
-        if r.status_code == 201:
-            model = json.loads((ROOT / "pathways" / "imaging_deadlock.json").read_text())
-            c.put(f"/versions/{r.json()['latest_version']['id']}", json={"model": model}, headers=designer)
-            print("pathway imaging_deadlock: loaded as draft v1 (the Verifier's worked example)")
+        install_deadlock_example(c, designer)
         install_clinical(c, designer, admin)
         nurse = token(c, DEMO_USERS[1][1], DEMO_USERS[1][2])
         added = sum(

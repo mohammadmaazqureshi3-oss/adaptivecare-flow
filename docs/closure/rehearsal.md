@@ -14,7 +14,7 @@ Rehearse it three times with a timer, and record the demo once as the backup vid
 | 4:30–6:30 | Algorithm 3 | Simulation loop; staffing with intervals; Erlang C 92/100; greedy vs exhaustive gap 0; comparison of 2 vs 4 nurses | U22, U23, Table 11.1 |
 | 6:30–8:30 | Algorithm 2 | One case across services (U13); invariants I1–I5 and the test that proves each; wait-id correlation; outbox; replay; the answer timeout found in Closure | U13, U14, chapter 9 |
 | 8:30–12:00 | Live demo | The script below | |
-| 12:00–14:00 | Process and quality | Scrum phases; velocity; 652 tests, 92.8% coverage; the AI rules file and the 33 defects found (Table 14.1) — be open that the increments took two days | Figures 3.1, 15.1; chapter 14 |
+| 12:00–14:00 | Process and quality | Scrum phases; velocity; 664 tests, 94.3% statement coverage; the AI rules file and the 33 defects found (Table 14.1) — be open that the increments took two days | Figures 3.1, 15.1; chapter 14 |
 | 14:00–15:00 | Results and limits | Figure 13.2; limits: Docker path unrun, synthetic data, alpha test, calendar; next steps | Chapter 16 |
 
 ## Before the demo (checklist)

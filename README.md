@@ -14,10 +14,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open <http://localhost:8080> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
+Open <https://localhost:8443> (a self-signed certificate is made at start; <http://localhost:8080>
+redirects there) and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
 <http://localhost:8000/health/all> shows every service's health; admins see health and
-request metrics under Monitoring → Services. Prometheus (optional):
-`docker compose --profile monitoring up -d`, then <http://localhost:9090>.
+request metrics under Monitoring → Services. Prometheus and Grafana (optional):
+`docker compose --profile monitoring up -d`, then <http://localhost:9090> and
+<http://localhost:3000> (admin / `GRAFANA_ADMIN_PASSWORD`). Every service logs JSON lines with
+the case id (`LOG_FORMAT=text` for plain lines).
 
 ### Without Docker (the services built so far)
 
@@ -44,6 +47,7 @@ python3 -m venv .venv
   services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer \
   services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py scripts/traceability.py scripts/build_report.py scripts/report_charts.py
 npm --prefix web test && npm --prefix web run typecheck
+npm --prefix web run e2e    # browser tests in Chrome; needs dev.sh, seed_demo.py and npm run dev
 ```
 
 If `import pathway_core` fails outside the repo root on macOS with Python 3.13, macOS has

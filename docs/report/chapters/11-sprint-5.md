@@ -37,7 +37,8 @@ so the formula is used only where it is exact: to validate the simulator.
 
 **Input — a scenario:** the pathway version with a duration distribution per task (lognormal,
 triangular, exponential or fixed) and branch probabilities (DES-06); arrivals per hour of the day;
-the urgency mix of arriving patients; staff per role and the cost weight of each role; deadline
+the urgency mix of arriving patients (since Closure, the class shares of the model's
+training data by default); staff per role and the cost weight of each role; deadline
 targets such as "at most 5% of urgency 1–2 patients wait more than 5 minutes for confirmation";
 the simulated length, the warm-up and the seed.
 

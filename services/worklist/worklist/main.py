@@ -27,7 +27,7 @@ from care_events import Bus, Event, OutboxRelay, add_to_outbox, first_time
 from care_events.rabbit import RabbitBus
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
-from service_metrics import instrument
+from service_metrics import case_context, instrument
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -139,6 +139,10 @@ class Consumer:
         self.on_alert = on_alert
 
     def on_event(self, event: Event) -> None:
+        with case_context(event.case_id):  # every log line carries the case id (C4-06)
+            self._handle(event)
+
+    def _handle(self, event: Event) -> None:
         with self.db.sessions.begin() as s:
             if not first_time(s, event.event_id):
                 return  # duplicate delivery

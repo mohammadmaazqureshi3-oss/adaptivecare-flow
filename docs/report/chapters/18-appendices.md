@@ -25,6 +25,7 @@ design decision (`CLAUDE.md`, rule 1).
 | 0006 | Clinical pathways, chaining, overrides and the urgency model | Sprint 6 |
 | 0007 | Hardening: encryption, monitoring, alerts, a new task type | Sprint 7 |
 | 0008 | An answer timeout for service and ML tasks | Closure |
+| 0009 | Closure additions: structured logs, HTTPS, Grafana, the urgency mix, browser tests | Closure |
 
 The full texts are in `docs/decisions/`.
 
