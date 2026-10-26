@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from pathway_core import Edge, Node, Pathway
-from pathway_core.settings import deadline, emit, override, retry, undo
+from pathway_core.settings import deadline, emit, override, response_timeout, retry, undo
 
 
 class Exporter:
@@ -114,6 +114,8 @@ class Exporter:
             out.append(f"deadline {chain.minutes:g} min" + (f", escalates to {levels}" if levels else ""))
         if policy := retry(n):
             out.append(f"retries {policy.max}× from {policy.base_delay_s:g} s, doubling")
+        if (timeout := response_timeout(n)) is not None:
+            out.append(f"no answer in {timeout:g} s counts as a failure")
         if n.fallback:
             out.append(f"fails for good → fallback **{n.fallback}**")
         if action := undo(n):

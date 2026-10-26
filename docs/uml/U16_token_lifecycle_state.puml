@@ -1,18 +1,20 @@
 @startuml U16_token_lifecycle_state
 !include style.iuml
-title U16 — Token lifecycle (state machine, Sprint 3; from 06)
+title U16 — Token lifecycle (state machine, final; from 06)
 
 [*] --> Moving : Start, parallel split\nor join fires
 Moving --> Moving : decision (one branch)\nor merge
-Moving --> Waiting : reaches a task or timer\n/ wait id t@node#n, TaskRequested
+Moving --> Waiting : reaches a task or timer\n/ wait id t@node#n, TaskRequested\n(+ deadline / answer-timeout timers)
 Waiting --> Moving : TaskCompleted naming this wait\n[outputs valid] / store outputs
-Waiting --> Moving : TaskFailed for good\n[fallback drawn] / take fallback arrow
+Waiting --> Waiting : temporary failure or no answer in time\n[retries left] / retry after backoff (same wait id)
+Waiting --> Waiting : deadline passed / escalate (role changes)
+Waiting --> Moving : failed for good, or retries used up\n[fallback drawn] / take fallback arrow
 Waiting --> Waiting : late or duplicate reply\n(another wait id) / ignored
 Moving --> Parked : reaches a parallel join\n[not all inputs present]
 Parked --> [*] : join fires (consumed)
 Moving --> [*] : parallel split (replaced by children)\nor End (consumed)
-Moving --> Cancelled : case fails
-Waiting --> Cancelled : case fails
-Parked --> Cancelled : case fails
+Moving --> Cancelled : case fails or compensates
+Waiting --> Cancelled : case fails or compensates\n/ CancelRequested
+Parked --> Cancelled : case fails or compensates
 Cancelled --> [*]
 @enduml

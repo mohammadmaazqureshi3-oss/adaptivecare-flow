@@ -1,6 +1,6 @@
 {
   "id": "triage",
-  "version": 3,
+  "version": 4,
   "name": "Emergency triage",
   "variables": [
     {"name": "patient_id", "type": "string"},
@@ -34,7 +34,7 @@
     {"id": "news2", "type": "task", "kind": "service", "service": "News2Score", "label": "Early warning score (NEWS2)",
      "inputs": ["rr", "spo2", "oxygen", "sbp", "hr", "temp", "mental"],
      "outputs": ["news2", "news2_risk"],
-     "retry": {"max": 2, "baseDelayS": 1}, "fallback": "manual_news2",
+     "retry": {"max": 2, "baseDelayS": 1, "timeoutS": 10}, "fallback": "manual_news2",
      "duration": {"dist": "fixed", "meanMin": 0.05}},
     {"id": "manual_news2", "type": "task", "kind": "human", "role": "nurse", "label": "Calculate NEWS2 by hand",
      "inputs": ["patient_id", "rr", "spo2", "oxygen", "sbp", "hr", "temp", "mental"],
@@ -44,7 +44,7 @@
     {"id": "predict", "type": "task", "kind": "ml", "service": "PredictUrgency", "label": "Predict urgency",
      "inputs": ["age", "sex", "arrival_mode", "chief_complaint", "spo2", "sbp", "hr", "rr", "temp", "pain", "mental"],
      "outputs": ["urgency", "confidence", "triage_note"],
-     "retry": {"max": 2, "baseDelayS": 1}, "fallback": "manual_triage",
+     "retry": {"max": 2, "baseDelayS": 1, "timeoutS": 10}, "fallback": "manual_triage",
      "duration": {"dist": "fixed", "meanMin": 0.1}},
     {"id": "manual_triage", "type": "task", "kind": "human", "role": "nurse", "label": "Manual triage (model unavailable)",
      "inputs": ["patient_id", "chief_complaint", "spo2", "sbp", "hr", "rr", "temp", "pain", "mental"],

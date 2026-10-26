@@ -22,6 +22,8 @@ DISTRIBUTIONS = {
 MAX_RETRIES = 10
 EVENT_NAME = re.compile(r"^[A-Z][A-Za-z0-9]{2,63}$")
 MAX_RETRY_DELAY_S = 3600
+DEFAULT_TIMEOUT_S = 30.0  # NFR-ROB-01: service and ML tasks
+MAX_TIMEOUT_S = 3600
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class Deadline:
 class Retry:
     max: int  # retries after the first attempt: max=2 means at most 3 attempts
     base_delay_s: float
+    timeout_s: float = 30.0  # no answer within this time counts as a temporary failure
 
     def delay(self, attempt: int) -> float:
         """Exponential backoff: base, 2×base, 4×base, … for attempts 1, 2, 3, …"""
@@ -135,6 +138,9 @@ def _retry_issues(node: Node, r: Any) -> list[str]:
     delay = r.get("baseDelayS")
     if not _number(delay) or not 0 < delay <= MAX_RETRY_DELAY_S:
         return [f"The first retry delay must be more than 0 and at most {MAX_RETRY_DELAY_S} seconds"]
+    timeout = r.get("timeoutS", DEFAULT_TIMEOUT_S)
+    if not _number(timeout) or not 0 < timeout <= MAX_TIMEOUT_S:
+        return [f"The answer timeout must be more than 0 and at most {MAX_TIMEOUT_S} seconds"]
     return []
 
 
@@ -176,7 +182,21 @@ def deadline(node: Node) -> Deadline | None:
 
 def retry(node: Node) -> Retry | None:
     r = node.settings.get("retry")
-    return None if r is None else Retry(int(r["max"]), float(r["baseDelayS"]))
+    if r is None:
+        return None
+    return Retry(int(r["max"]), float(r["baseDelayS"]), float(r.get("timeoutS", DEFAULT_TIMEOUT_S)))
+
+
+def response_timeout(node: Node) -> float | None:
+    """NFR-ROB-01: how long the engine waits for a service or ML task to answer before it
+    counts the silence as a temporary failure (retry, then fallback). Only for tasks that
+    have somewhere to go: a retry policy or a fallback. People get deadlines instead."""
+    if node.type != "task" or node.kind == "human":
+        return None
+    policy = retry(node)
+    if policy:
+        return policy.timeout_s
+    return DEFAULT_TIMEOUT_S if node.fallback else None
 
 
 def undo(node: Node) -> str | None:

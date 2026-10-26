@@ -1,21 +1,24 @@
 @startuml U02_use_case_designer_admin
 !include style.iuml
-title U02 — Designer and admin (use case, Sprint 0 draft)
+title U02 — Designer and admin (use case, final)
 left to right direction
 actor Designer as "Pathway designer"
 actor Admin
+actor Manager
 rectangle "Design time" {
   usecase "Draw pathway (DES-01)" as D1
   usecase "Declare variables, inputs, outputs (DES-02)" as D2
-  usecase "Write branch conditions (DES-03)" as D3
-  usecase "Set deadlines, escalation, retries,\nfallback, undo (DES-04)" as D4
+  usecase "Write branch conditions,\nchecked live (DES-03)" as D3
+  usecase "Set deadlines, escalation, retries,\nanswer timeout, fallback, undo,\noverride check, announced event (DES-04)" as D4
   usecase "Verify (VER-01..06)" as V
-  usecase "See counterexample on canvas" as CE
+  usecase "Replay the counterexample\nstep by step on the canvas" as CE
   usecase "Simulate (SIM-01..02)" as S
   usecase "Get staffing advice (SIM-03)" as A
+  usecase "Compare two runs (SIM-05)" as CMP
   usecase "Publish immutable version (DES-05)" as P
   usecase "Deploy version (DEP-01)" as DEP
   usecase "Undeploy: drain then retire (DEP-02)" as UND
+  usecase "Manage alert contacts (WRK-03)" as AC
 }
 Designer --> D1
 Designer --> D2
@@ -24,9 +27,12 @@ Designer --> D4
 Designer --> V
 Designer --> S
 Designer --> P
+Manager --> S
 Admin --> DEP
 Admin --> UND
+Admin --> AC
 CE .> V : <<extend>>\n[UNSAFE]
 A .> S : <<extend>>
+CMP .> S : <<extend>>
 P ..> V : <<include>>
 @enduml

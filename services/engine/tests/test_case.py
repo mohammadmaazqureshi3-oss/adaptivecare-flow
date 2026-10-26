@@ -38,7 +38,13 @@ def test_eng01_registration_starts_the_case_and_requests_both_parallel_tasks() -
     case = Case(TRIAGE, "case-1")
     out = case.apply(registered())
     assert case.status == "running" and case.data == {"patient_id": "P000001"}
-    assert [e.type for e in out] == ["CaseStarted", "TaskRequested", "TimerScheduled", "TaskRequested"]
+    assert [e.type for e in out] == [
+        "CaseStarted",
+        "TaskRequested",  # predict (ML)
+        "TimerScheduled",  # its answer timeout (NFR-ROB-01)
+        "TimerScheduled",  # the vital signs deadline
+        "TaskRequested",  # vitals (nurse)
+    ]
     reqs = requests(out)
     assert reqs["predict"].routing_key == "TaskRequested.PredictUrgency"
     assert reqs["vitals"].routing_key == "TaskRequested.worklist"

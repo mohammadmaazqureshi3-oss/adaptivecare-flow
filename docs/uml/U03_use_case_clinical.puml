@@ -1,31 +1,48 @@
 @startuml U03_use_case_clinical
 !include style.iuml
-title U03 — Clinical staff and manager (use case, Sprint 0 draft)
+title U03 — Clinical staff and manager (use case, final)
 left to right direction
 actor Nurse
+actor "Charge nurse" as Charge
 actor Doctor
 actor Manager
+actor Admin
 actor "ML service" as ML <<system>>
+actor "Scores service" as SC <<system>>
+actor "SMTP / SMS gateway" as GW <<system>>
+Charge -|> Nurse
 rectangle "Run time" {
   usecase "Register and search patients (PAT-01)" as R
+  usecase "Reserve, release and view beds (PAT-02)" as B
   usecase "Start a case (ENG-01)" as C
-  usecase "See, claim, complete tasks (WRK-01)" as T
+  usecase "See, claim, complete tasks;\nreport a problem (WRK-01)" as T
   usecase "Override ML level with reason (WRK-02)" as O
   usecase "Predict urgency (ML-02)" as P
+  usecase "Compute NEWS2 (CLN-04)" as N
   usecase "Receive escalation alert (WRK-03)" as E
   usecase "View case history (MON-01)" as H
   usecase "View dashboards (MON-02)" as DB
+  usecase "View service health (MON-03)" as SH
 }
 Nurse --> R
+Nurse --> B
 Nurse --> T
 Nurse --> O
+Doctor --> R
 Doctor --> T
 Doctor --> O
 Doctor --> H
+Charge --> E
 Manager --> E
 Manager --> DB
 Manager --> H
+Admin --> H
+Admin --> DB
+Admin --> SH
 R ..> C : <<include>>
 C ..> P : <<include>>
+C ..> N : <<include>>
 P <-- ML
+N <-- SC
+E --> GW
 @enduml

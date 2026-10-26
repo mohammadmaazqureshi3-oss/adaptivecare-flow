@@ -11,6 +11,11 @@ Engines: the deployer (DEP-01) runs here with a local runtime, so pressing Deplo
 admin starts that version's engine inside this process instead of a Docker container.
 
 Usage: ./scripts/dev.sh   (sets PYTHONPATH and runs this file)
+
+Demo of NFR-ROB-01 without Docker: ``DEV_WITHOUT=ml ./scripts/dev.sh`` starts everything except
+the ml service (also ``scores``), so prediction requests go unanswered and the engine's answer
+timeout sends triage to the manual fallback. Stopping and restarting the stack is the "kill the
+engine mid-case" demo: engines are resumed by the deployer and cases carry on from the store.
 """
 
 from __future__ import annotations
@@ -111,8 +116,13 @@ class Stack:
             worklist_app(WorklistDB(worklist_engine(sqlite("worklist"))), self.bus),
             PORTS["worklist"],
         )
-        self.serve("ml", ml_app(self.bus), PORTS["ml"])
-        self.serve("scores", scores_app(self.bus), PORTS["scores"])
+        without = {name.strip() for name in os.environ.get("DEV_WITHOUT", "").split(",") if name.strip()}
+        if "ml" not in without:
+            self.serve("ml", ml_app(self.bus), PORTS["ml"])
+        if "scores" not in without:
+            self.serve("scores", scores_app(self.bus), PORTS["scores"])
+        if without:
+            log.warning("not started (DEV_WITHOUT): %s", ", ".join(sorted(without)))
         self.serve("gateway", gateway_app(), PORTS["gateway"])
         runtime = LocalRuntime(self.start_engine, self.stop_engine)
         deployer = deployer_app(DeployerDB(deployer_engine(sqlite("deployer"))), self.bus, runtime)

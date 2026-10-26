@@ -1,6 +1,6 @@
 @startuml U28_triage_pathway_activity
 !include style.iuml
-title U28 — Emergency triage v3 (activity, exported from the pathway model)
+title U28 — Emergency triage v4 (activity, exported from the pathway model)
 start
 :Patient registered;
 note right: started by **PatientRegistered**
@@ -13,12 +13,14 @@ end note
 note right
   writes news2, news2_risk
   retries 2× from 1 s, doubling
+  no answer in 10 s counts as a failure
   fails for good → fallback **manual_news2**
 end note
 :Predict urgency\n<size:10>PredictUrgency (ml)</size>;
 note right
   writes urgency, confidence, triage_note
   retries 2× from 1 s, doubling
+  no answer in 10 s counts as a failure
   fails for good → fallback **manual_triage**
 end note
 if (Red flags or unsure?) then (spo2 < 90 or sbp < 80 or news2 >= 7 or urgency <= 2 or confidence < 0.7 p=0.4)

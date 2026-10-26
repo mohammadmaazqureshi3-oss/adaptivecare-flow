@@ -1,22 +1,23 @@
 @startuml U15_case_lifecycle_state
 !include style.iuml
-title U15 — Case lifecycle (state machine, Sprint 3; update of 05, Migrating removed)
+title U15 — Case lifecycle (state machine, final; update of 05, Migrating removed)
 
 [*] --> New
 New --> Running : start trigger\n/ CaseStarted, first tokens
 New --> Failed : start inputs missing
-Running --> Running : task replies, decisions,\nsplits and joins
-Running --> Completed : End fires and no token is left\n/ CaseCompleted
-Running --> Failed : task failed for good, no fallback\nor a decision cannot be evaluated\n/ CaseFailed, cancel tokens
-Running --> Compensated : failure with undo actions\n(Sprint 4, ENG-08)
-Running --> Cancelled : cancelled by staff (Sprint 4)
+Running --> Running : task replies, decisions, splits and joins,\nretries, escalations, answer timeouts
+Running --> Completed : End fires and no token is left\n/ CaseCompleted (+ announced event)
+Running --> Failed : task failed for good, no fallback, nothing to undo,\nor a decision cannot be evaluated\n/ CaseFailed, cancel tokens
+Running --> Compensating : task failed for good, no fallback,\nfinished steps have undo actions (ENG-08)
+Compensating --> Compensated : every undo level confirmed\n/ CaseCompensated
+Compensating --> Failed : an undo reports ok = false\n/ manager alerted, CaseFailed
 Completed --> [*]
 Failed --> [*]
 Compensated --> [*]
-Cancelled --> [*]
 note right of Completed
-  I4: every case ends in exactly one
-  of the four final states; later
-  messages are recorded and ignored.
+  I4: every case ends in exactly one final
+  state; later messages are recorded and ignored.
+  ("cancelled" exists as a final status in the model,
+  but no action cancels a whole case yet.)
 end note
 @enduml

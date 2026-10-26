@@ -242,7 +242,7 @@ function TaskFields({ node, nodes, variables, readOnly, onChange }: Omit<NodePro
             disabled={readOnly}
             onChange={(e) => {
               const max = num(e.target.value);
-              onChange({ retry: max ? { max, baseDelayS: d.retry?.baseDelayS ?? 1 } : undefined });
+              onChange({ retry: max ? { ...d.retry, max, baseDelayS: d.retry?.baseDelayS ?? 1 } : undefined });
             }}
           />
         </Field>
@@ -255,6 +255,19 @@ function TaskFields({ node, nodes, variables, readOnly, onChange }: Omit<NodePro
               value={d.retry.baseDelayS}
               disabled={readOnly}
               onChange={(e) => onChange({ retry: { ...d.retry!, baseDelayS: Number(e.target.value) } })}
+            />
+          </Field>
+        )}
+        {kind !== "human" && (d.retry || d.fallback) && (
+          <Field label="No answer after (s) counts as a failure">
+            <input
+              type="number"
+              min={1}
+              placeholder="30"
+              value={d.retry?.timeoutS ?? ""}
+              disabled={readOnly || !d.retry}
+              title={d.retry ? "" : "Set retries to change it; without retries the default is 30 s"}
+              onChange={(e) => onChange({ retry: { ...d.retry!, timeoutS: num(e.target.value) || undefined } })}
             />
           </Field>
         )}

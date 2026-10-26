@@ -1,9 +1,9 @@
 @startuml U19_failure_handling_activity
 !include style.iuml
-title U19 — Failure handling (activity, Sprint 4) · Case._task_failed and compensation
+title U19 — Failure handling (activity, final) · Case._failure and compensation
 
 start
-:TaskFailed for the task waiting on exactly this wait id;
+:TaskFailed for the task waiting on exactly this wait id,\nor its answer timeout fired for the current attempt (NFR-ROB-01:\na service that is down never answers; the silence counts as temporary);
 if (temporary and retries left?\n(attempt ≤ retry.max)) then (yes)
   :schedule retry timer after base × 2^(attempt−1) s;
   :on TimerFired: attempt += 1, TaskRequested again\n(same wait id: a late success of an earlier attempt still counts);

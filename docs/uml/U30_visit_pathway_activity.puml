@@ -8,6 +8,7 @@ note right: started by **AdmissionRequested**
 note right
   writes bed_id
   retries 3× from 30 s, doubling
+  no answer in 30 s counts as a failure
   undo: ReleaseBed
 end note
 :Prepare ward handover\n<size:10>nurse</size>;

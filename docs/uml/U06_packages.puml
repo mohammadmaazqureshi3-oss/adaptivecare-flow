@@ -1,10 +1,11 @@
 @startuml U06_packages
 !include style.iuml
-title U06 — Repository packages and pathway-core reuse (Sprint 0 draft)
+title U06 — Repository packages and shared-package reuse (final)
 package "packages" {
   package "pathway-core" as core {
     [model] as model
     [tokens] as tokens
+    [settings] as settings
     package "conditions" {
       [lexer] --> [parser]
       [parser] --> [ast]
@@ -12,7 +13,14 @@ package "packages" {
       [evaluate] --> [ast]
     }
     tokens --> model
+    settings --> model
   }
+  package "care-events" as events {
+    [envelope]
+    [bus]
+    [outbox]
+  }
+  [service-metrics] as metrics
 }
 package "services" {
   [verifier] as ver
@@ -25,15 +33,26 @@ package "services" {
   [worklist]
   [patient]
   [ml]
+  [scores]
 }
 ver --> tokens : explores every move
 ver --> typecheck
 sim --> tokens : virtual moves
 sim --> evaluate
+sim --> settings : durations, retries
 eng --> tokens : real moves
 eng --> evaluate
+eng --> settings : deadlines, retries,\nanswer timeout, undo
 designer --> model
 deployer --> model : PIM -> PSM
+eng --> events
+worklist --> events
+patient --> events
+ml --> events
+scores --> events
+deployer --> events
+designer --> events
+services ..> metrics : every service\n(/metrics, MON-03)
 note bottom of core
   The semantics exist once:
   what is verified and simulated

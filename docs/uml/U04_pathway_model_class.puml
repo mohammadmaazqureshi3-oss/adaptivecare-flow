@@ -1,6 +1,6 @@
 @startuml U04_pathway_model_class
 !include style.iuml
-title U04 — Pathway model (class, Sprint 1) · pathway_core.model / tokens
+title U04 — Pathway model (class, final) · pathway_core.model / tokens / settings
 hide empty members
 
 class Pathway <<frozen>> {
@@ -32,7 +32,7 @@ class Node <<frozen>> {
   trigger: str
   minutes: float
   fallback: str
-  settings: dict  <i>(deadline, escalation,\n retry, undo, duration, x, y)</i>
+  settings: dict  <i>(deadline, escalation, retry,\n undo, duration, override, emit, x, y)</i>
   --
   reads: frozenset[str]
   writes: frozenset[str]
@@ -61,7 +61,27 @@ class TokenGraph {
   enabled_moves(m): list[Move]
   fire(m, move): Marking
   is_complete(m): bool
+  successors(m): list[(Move, Marking)]
   replay(path): Marking
+}
+class "settings" as Settings <<module>> {
+  settings_issues(node): list[str]
+  deadline(node): Deadline
+  retry(node): Retry
+  response_timeout(node): float
+  undo(node) / emit(node): str
+  override(node): Override
+  duration(node): Duration
+}
+class Retry <<frozen>> {
+  max: int
+  base_delay_s: float
+  timeout_s: float = 30
+  delay(attempt): float
+}
+class Deadline <<frozen>> {
+  minutes: float
+  escalation: tuple[Escalation]
 }
 class Move <<frozen>> {
   node: str
@@ -86,4 +106,7 @@ Edge "*" --> "1" Node : source
 Edge "*" --> "1" Node : target
 TokenGraph --> Pathway
 TokenGraph ..> Move : creates
+Settings ..> Node : reads settings
+Settings ..> Retry
+Settings ..> Deadline
 @enduml

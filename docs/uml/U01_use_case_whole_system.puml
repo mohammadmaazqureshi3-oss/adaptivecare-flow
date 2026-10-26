@@ -1,29 +1,34 @@
 @startuml U01_use_case_whole_system
 !include style.iuml
-title U01 — Whole system (use case, Sprint 0 draft)
+title U01 — Whole system (use case, final)
 left to right direction
 actor Admin
 actor Designer as "Pathway designer"
 actor Nurse
+actor "Charge nurse" as Charge
 actor Doctor
 actor Manager
+Charge -|> Nurse
 rectangle "AdaptiveCare Flow" {
   usecase "Manage users and roles" as UC1
   usecase "Draw and version a pathway" as UC2
   usecase "Verify a pathway" as UC3
-  usecase "Simulate and get staffing advice" as UC4
+  usecase "Simulate, compare runs,\nget staffing advice" as UC4
   usecase "Publish a version" as UC5
   usecase "Deploy / undeploy a version" as UC6
-  usecase "Register a patient" as UC7
+  usecase "Register patients, manage beds" as UC7
   usecase "Claim and complete tasks" as UC8
-  usecase "Override the ML suggestion" as UC9
+  usecase "Override the ML suggestion\n(with a reason)" as UC9
   usecase "View cases and history" as UC10
   usecase "View dashboards and alerts" as UC11
+  usecase "Receive escalated tasks\nand email/SMS alerts" as UC12
+  usecase "Watch service health\nand metrics" as UC13
 }
 Admin --> UC1
 Admin --> UC6
 Admin --> UC10
 Admin --> UC11
+Admin --> UC13
 Designer --> UC2
 Designer --> UC3
 Designer --> UC4
@@ -31,6 +36,7 @@ Designer --> UC5
 Nurse --> UC7
 Nurse --> UC8
 Nurse --> UC9
+Charge --> UC12
 Doctor --> UC7
 Doctor --> UC8
 Doctor --> UC9
@@ -38,5 +44,10 @@ Doctor --> UC10
 Manager --> UC4
 Manager --> UC10
 Manager --> UC11
+Manager --> UC12
 UC5 ..> UC3 : <<include>>
+note bottom of UC11
+  Matches the gateway's permission matrix
+  (services/gateway/gateway/permissions.py).
+end note
 @enduml

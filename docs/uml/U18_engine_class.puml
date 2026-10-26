@@ -1,6 +1,6 @@
 @startuml U18_engine_class
 !include style.iuml
-title U18 — Engine (class, Sprint 3) · services/engine and packages/care-events
+title U18 — Engine (class, final) · services/engine and packages/care-events
 hide empty members
 
 package engine {
@@ -13,11 +13,14 @@ package engine {
     history: list[Step]
     joins_fired: dict[str, int]
     waits: int
+    done: list[DoneStep]
+    undo_plan / undo_pending
     apply(event): list[Event]
-    state(): dict
-    -_start / _task_completed / _task_failed / _timer
+    state() / snapshot() / from_snapshot()
+    -_start / _task_completed / _task_failed / _failure / _timer
+    -_escalate / _compensate / _next_undo_level / _compensated
     -_advance / _step / _decide / _merge / _split / _join / _wait / _end
-    -_request / _send / _fail
+    -_request / _schedule / _send / _fail
   }
   class Token {
     id: str
@@ -25,6 +28,8 @@ package engine {
     node: str
     state: moving|parked|waiting|cancelled
     wait: str
+    attempt: int
+    level: int
   }
   class Step {
     direction: in|out
@@ -37,7 +42,20 @@ package engine {
     on_event(event)
     case_id_for(event)
     load(case_id): Case
-    -_replay(session, case_id): Case
+    drain() / running_cases()
+    case_view(case)
+    -_commit / _load / _replay / _summarise
+  }
+  class Scheduler {
+    clock, interval_s
+    tick(): int
+    start() / stop()
+  }
+  class TimerRow <<table timers>> {
+    id, case_id, due_at, event_json, fired
+  }
+  class SnapshotRow <<table snapshots>> {
+    case_id, upto_seq, state_json
   }
   class Store {
     sessions
@@ -81,6 +99,10 @@ EngineService --> Case : cache, replay
 EngineService --> Store
 Store --> CaseEventRow
 Store --> CaseRow
+Store --> TimerRow
+Store --> SnapshotRow
+Scheduler --> EngineService : TimerFired → on_event
+Scheduler ..> TimerRow : due timers
 Store --> OutboxRow
 EngineService --> OutboxRelay
 OutboxRelay --> Bus

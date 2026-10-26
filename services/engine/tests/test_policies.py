@@ -68,14 +68,22 @@ def started(store: Store, pathway: Pathway = TRIAGE) -> tuple[EngineService, Sch
     return svc, Scheduler(svc, clock), clock
 
 
+def model_answers(svc: EngineService, store: Store) -> None:
+    """The ML task answers at once, so only the nurse's deadline timers are left to fire."""
+    predict = requested(store, "predict")[0]
+    svc.on_event(reply_at(predict, "TaskCompleted", at(seconds=1), outputs={"urgency": 3, "confidence": 0.9}))
+
+
 # ---- ENG-06: deadlines and escalation -------------------------------------------------
 
 
 def test_eng06_overdue_task_escalates_along_the_chain_then_alerts_the_manager(store: Store) -> None:
     svc, scheduler, clock = started(store)
+    model_answers(svc, store)
     vitals = requested(store, "vitals")[0]
     clock.set(minutes=9, seconds=59)
-    assert scheduler.tick() == 0  # not due yet (boundary)
+    assert scheduler.tick() == 1  # only the answered ML task's stale timeout; the deadline is not due
+    assert not [e for e in outbox(store) if e.type == "TaskReassigned"]  # (boundary)
     clock.set(minutes=10)
     assert scheduler.tick() == 1
     reassigned = [e for e in outbox(store) if e.type == "TaskReassigned"]
@@ -101,10 +109,11 @@ def test_eng06_overdue_task_escalates_along_the_chain_then_alerts_the_manager(st
 
 def test_eng06_a_task_done_in_time_does_not_escalate(store: Store) -> None:
     svc, scheduler, clock = started(store)
+    model_answers(svc, store)
     vitals = requested(store, "vitals")[0]
     svc.on_event(reply_at(vitals, "TaskCompleted", at(minutes=3), outputs={"spo2": 97}))
     clock.set(minutes=30)
-    assert scheduler.tick() == 1  # the deadline timer fires...
+    assert scheduler.tick() == 2  # the deadline timer and the ML answer timeout fire...
     assert not [
         e for e in outbox(store) if e.type in ("TaskReassigned", "NotificationRequested")
     ]  # ...and does nothing
@@ -145,6 +154,43 @@ def test_eng07_temporary_failures_are_retried_with_backoff_then_fall_back(store:
     svc.on_event(reply_at(attempt3, "TaskFailed", at(seconds=3), reason="timeout", temporary=True))
     assert [e.payload["node"] for e in outbox(store) if e.type == "TaskRequested"][-1] == "manual_triage"
     assert len(requested(store, "predict")) == 3  # max 2 retries = 3 attempts
+
+
+def test_nfr_rob01_a_service_that_never_answers_is_retried_then_the_fallback_runs(store: Store) -> None:
+    """The ML service is down: no reply at all. Each attempt waits 30 s for an answer."""
+    svc, scheduler, clock = started(store)
+    model_answers_never = requested(store, "predict")
+    clock.set(seconds=29.9)
+    scheduler.tick()
+    assert len(requested(store, "predict")) == 1  # still waiting for the first answer
+    clock.set(seconds=30)  # no answer: a temporary failure, retry 1 after 1 s
+    scheduler.tick()
+    clock.set(seconds=31)
+    scheduler.tick()
+    assert [e.attempt for e in requested(store, "predict")] == [1, 2]
+    clock.set(seconds=61)  # attempt 2 unanswered: retry 2 after 2 s
+    scheduler.tick()
+    clock.set(seconds=63)
+    scheduler.tick()
+    clock.set(seconds=93)  # attempt 3 unanswered: no retries left, so the fallback
+    scheduler.tick()
+    assert [e.attempt for e in requested(store, "predict")] == [1, 2, 3]
+    assert requested(store, "manual_triage"), "the nurse gets the manual triage task"
+    # The service comes back and answers the old request: the case has moved on.
+    late = reply_at(
+        model_answers_never[0], "TaskCompleted", at(seconds=95), outputs={"urgency": 1, "confidence": 1}
+    )
+    svc.on_event(late)
+    case = svc.load(svc.case_id_for(registration()) or "")
+    assert case is not None and "urgency" not in case.data
+
+
+def test_nfr_rob01_an_answer_in_time_cancels_nothing_and_changes_nothing(store: Store) -> None:
+    svc, scheduler, clock = started(store)
+    model_answers(svc, store)
+    clock.set(seconds=30)
+    scheduler.tick()  # the timeout fires but the task is done: ignored
+    assert len(requested(store, "predict")) == 1 and not requested(store, "manual_triage")
 
 
 def test_eng07_a_permanent_failure_skips_the_retries(store: Store) -> None:

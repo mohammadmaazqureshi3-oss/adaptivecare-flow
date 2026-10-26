@@ -10,7 +10,7 @@ SQLite and the in-memory bus (Docker was not available; see "Not measured").
 | NFR-PERF-03 | 30 replications × 7 days, 20 nodes ≤ 60 s | 5.0 s | `test_nfr_perf_03_…` | met |
 | NFR-PERF-04 | ML prediction p95 ≤ 100 ms | 11 ms | `test_nfr_perf_04_…` | met |
 | NFR-REL-01..03 | No double change, resume after crash, no lost task | pass | fault-injection tests I1–I5 (Sprints 3–4) | met |
-| NFR-ROB-01 | ML down → fallback within 2 retries | pass | `test_triage_flow` (no model), clinical tests | met |
+| NFR-ROB-01 | ML down → fallback within 2 retries | pass: 3 unanswered attempts, then manual triage | `test_nfr_rob01_…` (engine, clinical system test with no ML service); live in the dev stack with `DEV_WITHOUT=ml`: manual triage 33.5 s after the vital signs | met after the Closure fix (decision 0008) |
 | NFR-SEC-01/02 | Tokens; permission matrix | every rule × every role | `test_nfr_sec02_permission_matrix` (gateway) | met |
 | NFR-SEC-05 | Name and birth date encrypted; key outside the repository | raw-database inspection finds no name or date | `test_nfr_sec05_…` | met |
 | NFR-SEC-06 | No high findings (bandit, pip-audit) | 0 bandit issues; pip-audit: no known vulnerabilities in any requirements file | CI security job | met |

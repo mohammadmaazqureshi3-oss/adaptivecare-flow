@@ -1,10 +1,14 @@
 @startuml U14_handle_event_activity
 !include style.iuml
-title U14 — Handle an incoming event (activity, Sprint 3) · EngineService.on_event
+title U14 — Handle an incoming event (activity, final) · EngineService.on_event
 
 start
-:event arrives on engine.<pathway>.v<version>;
+:event arrives on engine.<pathway>.v<version>\n(or TimerFired from the Scheduler);
 if (event is the start trigger?) then (yes)
+  if (engine draining? (DEP-02)) then (yes)
+    :ignore: no new cases;
+    stop
+  endif
   :case_id := uuid5(pathway, version, event_id);
 else (no)
   :case_id := event.case_id;
@@ -16,15 +20,18 @@ if (event_id already in case_events?) then (yes)
 else (no)
   if (case in memory?) then (yes)
   else (no)
-    :replay the case's stored events (I3);
+    :latest snapshot + replay of the events after it (I3);
   endif
   if (case not started and event is not the trigger?) then (yes)
     :ignore (unknown case);
   else (no)
-    :outbound := case.apply(event)\n(token rules, pure, deterministic ids);
+    :outbound := case.apply(event)\n(token rules, pure, deterministic ids and times);
     :INSERT case_events(event);
-    :INSERT outbox(outbound);
+    :TimerScheduled → INSERT timers (kept, not published);\nother outbound → INSERT outbox;
     :UPSERT cases summary;
+    if (every 50th event?) then (yes)
+      :UPSERT snapshot;
+    endif
   endif
 endif
 :COMMIT (I5) and release the lock;

@@ -31,6 +31,6 @@ This file is under version control and is part of the AI tooling architecture
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e packages/pathway-core -e packages/care-events -e packages/service-metrics -r requirements-dev.txt
 .venv/bin/python -m pytest --cov
-.venv/bin/ruff check packages services && .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py
+.venv/bin/ruff check packages services && .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py scripts/traceability.py scripts/build_report.py scripts/report_charts.py
 cp .env.example .env && docker compose up --build
 ```

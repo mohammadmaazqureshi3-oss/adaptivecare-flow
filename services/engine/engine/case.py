@@ -8,6 +8,7 @@ reply that arrives twice or too late changes nothing (I1).
 
 Failure handling (Sprint 4), in the decision order of Section 7:
 * a temporary failure is retried with exponential backoff while retries remain (ENG-07);
+  a service or ML task that does not answer in time counts as one (NFR-ROB-01);
 * then the fallback branch the designer drew, if any;
 * otherwise running branches are cancelled and finished steps with an undo action are
   undone in reverse happened-before order, independent undos in parallel (ENG-08).
@@ -25,7 +26,7 @@ from typing import Any
 from care_events import Event, derived_id
 from pathway_core import Node, Pathway
 from pathway_core.conditions import EvaluationError, Expr, evaluate, parse
-from pathway_core.settings import deadline, emit, retry, undo
+from pathway_core.settings import deadline, emit, response_timeout, retry, undo
 
 FINAL = frozenset({"completed", "compensated", "failed", "cancelled"})
 ACTIVE = frozenset({"running", "compensating"})
@@ -195,9 +196,13 @@ class Case:
         if tok is None:
             return f"ignored: no task is waiting for {e.token_id} (duplicate or late reply)"
         node = self.nodes[tok.node or ""]
-        reason = str(e.payload.get("reason", "unknown"))
+        return self._failure(
+            tok, node, str(e.payload.get("reason", "unknown")), bool(e.payload.get("temporary"))
+        )
+
+    def _failure(self, tok: Token, node: Node, reason: str, temporary: bool) -> str:
         policy = retry(node)
-        if e.payload.get("temporary") and policy and tok.attempt <= policy.max:
+        if temporary and policy and tok.attempt <= policy.max:
             delay = policy.delay(tok.attempt)
             self._schedule("retry", timedelta(seconds=delay), tok, attempt=tok.attempt)
             return f"{node.id} failed ({reason}); retry {tok.attempt} of {policy.max} in {delay:g} s"
@@ -215,17 +220,39 @@ class Case:
         if tok is None:
             return f"ignored: {kind} timer for {e.payload.get('wait')}, which no longer waits"
         node = self.nodes[tok.node or ""]
-        if kind == "timer" and node.type == "timer":
-            self._move_on(tok, self._normal_out(node).id)
-            self._advance()
-            return f"timer {node.id} fired"
-        if kind == "retry" and e.payload.get("attempt") == tok.attempt:
-            tok.attempt += 1
-            self._request(tok, node)
-            return f"{node.id}: attempt {tok.attempt} requested"
-        if kind == "deadline" and e.payload.get("level") == tok.level:
-            return self._escalate(tok, node)
-        return f"ignored: stale {kind} timer for {node.id}"
+        handler = {
+            "timer": self._timer_node_due,
+            "retry": self._retry_due,
+            "deadline": self._deadline_due,
+            "timeout": self._answer_overdue,
+        }.get(str(kind))
+        done = handler(tok, node, e.payload) if handler else None
+        return done or f"ignored: stale {kind} timer for {node.id}"
+
+    # Each returns None when the timer is stale (the token has moved on to another attempt or level).
+
+    def _timer_node_due(self, tok: Token, node: Node, _: dict[str, Any]) -> str | None:
+        if node.type != "timer":
+            return None
+        self._move_on(tok, self._normal_out(node).id)
+        self._advance()
+        return f"timer {node.id} fired"
+
+    def _retry_due(self, tok: Token, node: Node, p: dict[str, Any]) -> str | None:
+        if p.get("attempt") != tok.attempt:
+            return None
+        tok.attempt += 1
+        self._request(tok, node)
+        return f"{node.id}: attempt {tok.attempt} requested"
+
+    def _deadline_due(self, tok: Token, node: Node, p: dict[str, Any]) -> str | None:
+        return self._escalate(tok, node) if p.get("level") == tok.level else None
+
+    def _answer_overdue(self, tok: Token, node: Node, p: dict[str, Any]) -> str | None:
+        """NFR-ROB-01: a service or ML task that did not answer in time failed temporarily."""
+        if p.get("attempt") != tok.attempt:
+            return None
+        return self._failure(tok, node, f"no answer within {response_timeout(node):g} s", temporary=True)
 
     # ---- deadlines and escalation (ENG-06) -------------------------------------------
 
@@ -435,6 +462,8 @@ class Case:
             "patient_id": self.data.get("patient_id"),
         }
         self._send("TaskRequested", payload, token_id=tok.wait, target=target, attempt=tok.attempt)
+        if (timeout := response_timeout(node)) is not None:  # a service that is down never answers
+            self._schedule("timeout", timedelta(seconds=timeout), tok, attempt=tok.attempt)
 
     def _fail(self, reason: str) -> str:
         self.status, self.reason = "failed", reason

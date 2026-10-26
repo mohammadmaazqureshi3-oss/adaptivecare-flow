@@ -41,7 +41,7 @@ class DeploymentRow(Base):
     queue: Mapped[str] = mapped_column(String(100))
     schema_name: Mapped[str] = mapped_column(String(100))
     config_json: Mapped[str] = mapped_column(Text)  # the generated PSM, kept for the report and restarts
-    status: Mapped[str] = mapped_column(String(20))  # starting | running | failed | stopped
+    status: Mapped[str] = mapped_column(String(20))  # starting | running | failed | draining | retired
     error: Mapped[str] = mapped_column(String(500), default="")
     requested_by: Mapped[str] = mapped_column(String(254), default="")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

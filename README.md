@@ -42,7 +42,7 @@ python3 -m venv .venv
 .venv/bin/ruff check packages services
 .venv/bin/mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient \
   services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer \
-  services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py
+  services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py scripts/traceability.py scripts/build_report.py scripts/report_charts.py
 npm --prefix web test && npm --prefix web run typecheck
 ```
 
@@ -62,6 +62,15 @@ Measure (see `docs/measurements/nfr-results.md`):
 .venv/bin/python -m pytest -s services/engine/tests/test_performance.py   # NFR-PERF-02
 .venv/bin/python scripts/load_test.py http://localhost:8000 10              # stress test, dev stack running
 .venv/bin/python scripts/sus_score.py docs/alpha-test/sus-results.csv       # NFR-USE-02 after the alpha test
+```
+
+Build the report (pandoc; charts need matplotlib; diagrams need `plantuml.jar`):
+
+```bash
+PLANTUML_JAR=/path/to/plantuml.jar ./scripts/render_uml.sh   # optional: diagram images
+python scripts/report_charts.py                               # charts from git and measurements
+.venv/bin/python scripts/build_report.py                      # docs/report/AdaptiveCare-Flow-Report.docx
+.venv/bin/python scripts/traceability.py                      # docs/closure/traceability.md
 ```
 
 Run the verifier on its own:
@@ -95,6 +104,8 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | `monitoring/` | Prometheus configuration (Compose profile `monitoring`) |
 | `docs/measurements/` | Measured NFR results and the stress test |
 | `docs/alpha-test/` | Alpha test script and SUS form (NFR-USE-02) |
+| `docs/closure/` | Acceptance checklist, UML check, traceability, demo rehearsal |
+| `docs/report/` | The final report: chapters (Markdown), figures, the built `.docx` |
 | `docs/ml/` | Model card and metrics of the urgency model |
 | `pathways/clinical/` | **CLN-01..04**: Triage v3 (with NEWS2), Assessment, Visit, chained by the events their End nodes announce |
 | `pathways/` | Examples: `triage.json` (v1, parallel), `imaging_deadlock.json` (UNSAFE), `imaging_fixed.json` |
@@ -116,3 +127,4 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | 5 | Algorithm 3: Simulator and Advisor | Done: SIM-01..04, DES-06, DEP-02; Erlang C 92/100, NFR-PERF-03 5 s |
 | 6 | ML and the three clinical pathways | Done: ML-01/02 (synthetic data until the KTAS file is added), WRK-02, PAT-02, CLN-01..03 |
 | 7 | Hardening and measurement | Done: CLN-04, WRK-03, MON-01..03, SIM-05, NFR-SEC-05, NFR-PERF-01..04 measured; alpha test (SUS) still to run with classmates |
+| Closure | Acceptance, report, rehearsal | Done: requirements checked (`docs/closure/`), NFR-ROB-01 fixed (decision 0008), diagrams checked against the code, report built (`docs/report/`); open: alpha test, Docker run, rehearsals |

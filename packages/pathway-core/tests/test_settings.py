@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from pathway_core import Node
-from pathway_core.settings import deadline, duration, retry, settings_issues, undo
+from pathway_core.settings import deadline, duration, response_timeout, retry, settings_issues, undo
 
 
 def task(kind: str = "service", **settings: Any) -> Node:
@@ -87,6 +87,9 @@ def test_des04_retry_boundaries_accepted(r: dict) -> None:
         ({"max": 2.5, "baseDelayS": 1}, "between 1 and 10"),
         ({"max": 2, "baseDelayS": 0}, "retry delay"),
         ({"max": 2, "baseDelayS": 3601}, "retry delay"),
+        ({"max": 2, "baseDelayS": 1, "timeoutS": 0}, "answer timeout"),
+        ({"max": 2, "baseDelayS": 1, "timeoutS": 3601}, "answer timeout"),
+        ({"max": 2, "baseDelayS": 1, "timeoutS": "soon"}, "answer timeout"),
     ],
 )
 def test_des04_retry_out_of_range(r: dict, fragment: str) -> None:
@@ -183,3 +186,12 @@ def test_wrk02_override_check_names_an_input_and_an_output() -> None:
         settings={"override": {"suggested": "confirmed", "decided": "urgency"}},
     )
     assert any("override check" in i for i in settings_issues(bad))
+
+
+def test_nfr_rob01_which_tasks_get_an_answer_timeout() -> None:
+    assert response_timeout(task(retry={"max": 2, "baseDelayS": 1})) == 30  # the default
+    assert response_timeout(task(retry={"max": 2, "baseDelayS": 1, "timeoutS": 8})) == 8
+    with_fallback = Node(id="t", type="task", kind="ml", service="M", fallback="manual")
+    assert response_timeout(with_fallback) == 30
+    assert response_timeout(task()) is None  # nowhere to go: it waits for the service
+    assert response_timeout(task("human")) is None  # people get deadlines instead

@@ -48,7 +48,7 @@ interface KnownNodeFields {
   minutes?: number;
   fallback?: string;
   deadline?: { minutes: number; escalation: Escalation[] };
-  retry?: { max: number; baseDelayS: number };
+  retry?: { max: number; baseDelayS: number; timeoutS?: number };
   undo?: string;
   duration?: Duration;
   override?: { suggested: string; decided: string };

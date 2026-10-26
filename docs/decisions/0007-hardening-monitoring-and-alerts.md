@@ -43,7 +43,8 @@ a way to talk to the rest of the system without breaking the event contract.
 7. **Scenario comparison (SIM-05)** calls one scenario better for a figure only when the two
    95% intervals do not overlap. That is conservative: overlapping intervals can still
    differ. The comparison says "no clear difference" rather than guessing.
-8. **Service tasks wait for their service.** With a durable queue, a request to a service
+8. **Service tasks wait for their service.** *(Superseded by decision 0008: automated tasks
+   now have an answer timeout.)* With a durable queue, a request to a service
    that is down waits until it returns; the fallback runs only after the service answers
    with failures. A deadline-based timeout for service tasks would need an engine change
    and is left for later.

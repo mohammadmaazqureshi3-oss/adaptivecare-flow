@@ -1,7 +1,7 @@
 @startuml U27_prediction_through_the_broker_sequence
 !include style.iuml
-title U27 — Prediction through the broker (sequence, Sprint 6)
-participant "engine.triage.v2" as engine
+title U27 — Prediction through the broker (sequence, Sprint 6; final)
+participant "engine.triage.v4" as engine
 queue "care.events" as bus
 participant "ml service" as ml
 participant "UrgencyModel" as model
@@ -14,7 +14,7 @@ ml -> model : predict(inputs)
 model -> model : features() → calibrated probabilities\nτ rule → level; SHAP → top 3 reasons
 model --> ml : level, probabilities, confidence, reasons, version
 alt model answered
-  ml ->> bus : TaskCompleted.triage.v2\n{outputs: urgency, confidence, triage_note}
+  ml ->> bus : TaskCompleted.triage.v4\n{outputs: urgency, confidence, triage_note}
   bus ->> engine : decision on live data:\nspo2 < 90 or sbp < 80 or urgency ≤ 2 or confidence < 0.7
   engine ->> bus : TaskRequested.worklist (confirm, with override check)
   bus ->> worklist
@@ -23,6 +23,9 @@ alt model answered
 else no model / prediction error
   ml ->> bus : TaskFailed (permanent / temporary)
   bus ->> engine : retry (temporary), then fallback: manual triage
+else ml service down (no answer)
+  engine -> engine : answer timeout (10 s) fires\n= temporary failure (decision 0008)
+  engine -> engine : retry twice, then fallback: manual triage (NFR-ROB-01)
 end
 note over ml
   p95 latency 11 ms (NFR-PERF-04 ≤ 100 ms).

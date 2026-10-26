@@ -1,39 +1,46 @@
 @startuml U13_case_across_services_sequence
 !include style.iuml
-title U13 — One case across the services (sequence, Sprint 3)
+title U13 — One case across the services (sequence, final: clinical Triage v4)
 actor Nurse
 participant gateway
 participant patient
 queue "care.events" as bus
-participant "engine.triage.v1" as engine
+participant "engine.triage.v4" as engine
+participant scores
 participant ml
 participant worklist
+participant "engine.assessment.v1" as next
 
 Nurse -> gateway : POST /patients
 gateway -> patient : POST /patients
-patient -> patient : save patient + outbox(PatientRegistered)\nin ONE transaction
+patient -> patient : encrypt name + birth date; save patient\n+ outbox(PatientRegistered) in ONE transaction
 patient --> Nurse : 201 P000004
-patient ->> bus : relay: PatientRegistered
+patient ->> bus : relay: PatientRegistered (no name, no birth date)
 bus ->> engine : PatientRegistered (trigger matches)
-engine -> engine : on_event: lock case, dedupe,\ncase.apply → start, split
-engine -> engine : store event + outbox(CaseStarted,\nTaskRequested×2) in ONE transaction
-engine ->> bus : TaskRequested.PredictUrgency
-engine ->> bus : TaskRequested.worklist (vitals)
-bus ->> ml : PredictUrgency
-ml ->> bus : TaskFailed.triage.v1 (model not trained yet)
-bus ->> engine : TaskFailed → fallback to manual triage
-engine ->> bus : TaskRequested.worklist (manual triage)
-bus ->> worklist : tasks for role nurse
-Nurse -> gateway : POST /tasks/{id}/claim, /complete {outputs}
+engine -> engine : on_event: lock case, dedupe,\ncase.apply → start
+engine -> engine : store event + timers + outbox(CaseStarted,\nTaskRequested) in ONE transaction
+engine ->> bus : TaskRequested.worklist (vital signs, deadline 10 min)
+bus ->> worklist : task for role nurse
+Nurse -> gateway : POST /tasks/{id}/claim, /complete {spo2, sbp, …}
 gateway -> worklist
-worklist -> worklist : task done + outbox(TaskCompleted)
-worklist ->> bus : TaskCompleted.triage.v1
-bus ->> engine : TaskCompleted × 2 → join fires once (I2)
-engine -> engine : decision on live data:\nurgency ≤ 2 or spo2 < 90 or confidence < 0.7
-engine ->> bus : TaskRequested.worklist (confirm)
+worklist ->> bus : TaskCompleted.triage.v4
+bus ->> engine : store outputs; next task
+engine ->> bus : TaskRequested.News2Score (+ answer timeout 10 s)
+bus ->> scores
+scores ->> bus : TaskCompleted {news2, news2_risk}
+engine ->> bus : TaskRequested.PredictUrgency (+ answer timeout 10 s)
+bus ->> ml
+ml ->> bus : TaskCompleted {urgency, confidence, triage_note}
+bus ->> engine : decision on live data:\nspo2 < 90 or sbp < 80 or news2 ≥ 7\nor urgency ≤ 2 or confidence < 0.7
+engine ->> bus : TaskRequested.worklist (confirm urgency, override check)
+Nurse -> worklist : complete; a changed level needs a reason (WRK-02)
+worklist ->> bus : TaskCompleted.triage.v4
+engine ->> bus : CaseCompleted + TriageCompleted (End announces it)
+bus ->> next : TriageCompleted starts the Assessment case
 note over bus
   At-least-once delivery: every consumer filters
   duplicates by event_id (I1) and acknowledges
-  only after committing.
+  only after committing. The worklist's monitor
+  queue (bound to #) records every event (MON-01).
 end note
 @enduml

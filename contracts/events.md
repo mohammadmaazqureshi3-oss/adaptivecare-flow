@@ -49,7 +49,7 @@ a reply must carry the same value, and only the token waiting on exactly that id
 | `CancelRequested.<target>` | engine → worker | `task_id`, `node` |
 | `CompensateRequested.<target>` | engine → worker | `task_id` (`undo:<node>#n`), `node`, `action`, `label`, `role` |
 | `Compensated` | worker → engine | `ok` (false = the undo failed) |
-| `TimerScheduled` / `TimerFired` | engine internal (not published) | `kind` (deadline/retry/timer), `wait`, `due_at`, `level`/`attempt` |
+| `TimerScheduled` / `TimerFired` | engine internal (not published) | `kind` (deadline/retry/timer/timeout), `wait`, `due_at`, `level`/`attempt` |
 | `PathwayDeployed` | deployer → designer | `version_id`, `container`, `queue` |
 | `PathwayDraining`, `PathwayRetired` | deployer → designer | `version_id`, `container` (DEP-02) |
 

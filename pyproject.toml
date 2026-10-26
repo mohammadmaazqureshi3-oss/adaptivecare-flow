@@ -42,3 +42,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["sklearn", "sklearn.*", "shap", "shap.*", "joblib"]  # no type information shipped
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib", "matplotlib.*"]  # only for scripts/report_charts.py, not a project dependency
+ignore_missing_imports = true

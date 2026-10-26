@@ -1,6 +1,6 @@
 @startuml E1_tables_per_service
 !include style.iuml
-title E1 — Tables per service (ER, Sprint 1: auth and designer)
+title E1 — Tables per service (ER, final; one schema per service, no cross-schema keys)
 hide circle
 skinparam linetype ortho
 
@@ -8,49 +8,160 @@ package "schema auth" {
   entity users {
     * id : int <<PK>>
     --
-    name : varchar(120)
-    email : varchar(254) <<unique>>
-    password_hash : varchar(100)  <i>bcrypt</i>
-    role : admin|designer|nurse|doctor|manager
-    active : bool
-    created_at : timestamptz
+    name, email <<unique>>, password_hash (bcrypt)
+    role : admin|designer|nurse|charge_nurse|doctor|manager
+    active : bool; created_at
   }
   entity login_log {
     * id : int <<PK>>
     --
-    user_id : int <<FK, nullable>>
-    email : varchar(254)
-    success : bool
-    at : timestamptz
+    user_id <<nullable>>, email, success, at
   }
 }
 package "schema designer" {
   entity pathways {
     * id : varchar(64) <<PK>>
     --
-    name : varchar(200)
-    created_by : varchar(254)
-    created_at : timestamptz
+    name, created_by, created_at
   }
   entity versions {
     * id : int <<PK>>
     --
-    pathway_id : varchar(64) <<FK>>
-    number : int
-    status : draft|verified|published
-    model : json
-    report : json <<nullable>>
-    author : varchar(254)
-    updated_at : timestamptz
-    published_at : timestamptz <<nullable>>
-    <<unique (pathway_id, number)>>
+    pathway_id <<FK>>, number <<unique per pathway>>
+    status : draft|verified|published|deployed|draining|retired
+    model : json; report : json
+    author, updated_at, published_at
+  }
+}
+package "schema simulator" {
+  entity jobs {
+    * id : int <<PK>>
+    --
+    version_id, pathway, version
+    kind : simulate|advise; scenario : json; budget
+    status; result : json; error
+    requested_by, created_at, finished_at
+  }
+}
+package "schema deployer" {
+  entity deployments {
+    * id : int <<PK>>
+    --
+    version_id, pathway, version
+    container, queue, schema_name
+    config_json (the generated PSM)
+    status : starting|running|failed|draining|retired
+    error, requested_by, started_at, healthy_at
+  }
+}
+package "schema engine_<pathway>_v<n> (one per deployed version)" {
+  entity case_events {
+    * seq : int <<PK>>
+    --
+    event_id <<unique>> (I1), case_id, event_json, received_at
+  }
+  entity cases {
+    * id : uuid <<PK>>
+    --
+    patient_id, status, started_at, updated_at
+  }
+  entity timers {
+    * id <<PK>> (TimerScheduled event id)
+    --
+    case_id, due_at, event_json, fired
+  }
+  entity snapshots {
+    * case_id <<PK>>
+    --
+    upto_seq, state_json
+  }
+  entity engine_state {
+    * key <<PK>>
+    --
+    value (e.g. draining)
+  }
+}
+package "schema worklist" {
+  entity tasks {
+    * id : int <<PK>>
+    --
+    request_event_id <<unique>>, request_json
+    case_id, wait_id, pathway, version, node, label
+    role, patient_id, inputs, outputs
+    deadline_min, due_at, kind : task|undo, override, level
+    status : open|claimed|done|failed|cancelled
+    assignee, result, created_at, claimed_at, completed_at
+  }
+  entity overrides {
+    * id <<PK>>
+    --
+    task_id, case_id, patient_id, node
+    suggested, decided, reason, by, at
+  }
+  entity notifications {
+    * id <<PK>>
+    --
+    event_id <<unique>>, role, message, case_id, created_at
+  }
+  entity alert_contacts {
+    * id <<PK>>
+    --
+    role, channel : email|sms, address, name, active
+  }
+  entity deliveries {
+    * id <<PK>>
+    --
+    notification_id, contact_id <<unique together>>
+    channel, address, text
+    status : pending|sent|failed; attempts, last_error
+    next_try_at, sent_at
+  }
+  entity case_summaries {
+    * case_id <<PK>>
+    --
+    pathway, version, patient_id, status, reason
+    started_at, ended_at, events
+  }
+  entity "case_events " as wl_events {
+    * id <<PK>>
+    --
+    event_id <<unique>>, case_id, type, token_id, at, detail
+  }
+}
+package "schema patient" {
+  entity patients {
+    * id : int <<PK>> (record number P000042)
+    --
+    name_enc, dob_enc : Fernet tokens (NFR-SEC-05)
+    identity : HMAC of name + birth date
+    sex, arrival_mode, chief_complaint
+    arrived_at, registered_by
+  }
+  entity patient_terms {
+    * patient_id <<FK>>
+    * term : HMAC of a name-word prefix
+  }
+  entity beds {
+    * id : varchar(20) <<PK>>
+    --
+    ward, status : free|reserved|occupied
+    patient_id, case_id, wait_id, updated_at
   }
 }
 users ||--o{ login_log
 pathways ||--|{ versions
-note bottom of versions
-  Rows with status = published are never updated (DES-05).
-  author / created_by hold the email the gateway passes;
-  no cross-schema foreign keys (database per service).
+cases ||--o{ case_events
+cases ||--o{ timers
+cases ||--o| snapshots
+notifications ||--o{ deliveries
+alert_contacts ||--o{ deliveries
+case_summaries ||--o{ wl_events
+patients ||--o{ patient_terms
+note bottom of patients
+  Services that send or receive events also hold outbox (id, event_id <<unique>>,
+  event_json, created_at, published_at) and inbox (event_id <<PK>>, handled_at)
+  from care-events: engine, worklist, patient, deployer. The designer applies
+  deploy events as forward-only status changes, so it needs no inbox.
+  ml and scores are stateless.
 end note
 @enduml

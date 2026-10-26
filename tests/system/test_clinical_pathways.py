@@ -48,13 +48,15 @@ SEVERE = {
 
 
 class Hospital:
-    def __init__(self, tmp: Path, stack: ExitStack) -> None:
+    def __init__(self, tmp: Path, stack: ExitStack, ml: bool = True, timeout_s: float | None = None) -> None:
         self.bus = InMemoryBus(deliver_twice=True)
         self.engines: dict[str, TestClient] = {}
         for name in ("triage", "assessment", "visit"):
-            model = Pathway.from_dict(
-                json.loads((ROOT / "pathways" / "clinical" / f"{name}.json").read_text())
-            )
+            doc = json.loads((ROOT / "pathways" / "clinical" / f"{name}.json").read_text())
+            for node in doc["nodes"]:  # tests shorten the answer timeouts to keep them fast
+                if timeout_s is not None and "retry" in node:
+                    node["retry"] |= {"timeoutS": timeout_s, "baseDelayS": 0.1}
+            model = Pathway.from_dict(doc)
             store = Store(engine_db(f"sqlite:///{tmp / f'{name}.db'}"))
             stack.callback(store.engine.dispose)
             self.engines[name] = stack.enter_context(TestClient(engine_app(model, store, self.bus)))
@@ -66,7 +68,8 @@ class Hospital:
         stack.callback(pt.engine.dispose)
         self.worklist = stack.enter_context(TestClient(worklist_app(wl, self.bus)))
         self.patient = stack.enter_context(TestClient(patient_app(pt, self.bus)))
-        stack.enter_context(TestClient(ml_app(self.bus)))
+        if ml:  # NFR-ROB-01: without it nobody answers PredictUrgency
+            stack.enter_context(TestClient(ml_app(self.bus)))
         # CLN-04: the NEWS2 task type exists only because this service answers it.
         stack.enter_context(TestClient(scores_app(self.bus)))
         self.bus.start()
@@ -241,3 +244,24 @@ def test_cln04_when_the_score_keeps_failing_a_nurse_calculates_news2(
             )
         )
         assert confirm["inputs"]["news2"] == 12
+
+
+def test_nfr_rob01_with_the_ml_service_down_triage_continues_through_the_fallback(tmp_path: Path) -> None:
+    with ExitStack() as es:
+        h = Hospital(tmp_path, es, ml=False, timeout_s=0.5)
+        register(h)
+        h.do("Measure vital signs", NURSE, SEVERE)
+        # No answer to three attempts (the first and 2 retries), then the designer's fallback.
+        h.do(
+            "Manual triage (model unavailable)",
+            NURSE,
+            {"urgency": 2, "confidence": 1.0, "triage_note": "ML down: nurse triage"},
+        )
+        h.wait_for(
+            lambda: any(
+                t["label"].startswith("Confirm") for t in h.worklist.get("/tasks", headers=NURSE).json()
+            )
+        )
+        [summary] = h.worklist.get("/cases", params={"pathway": "triage"}).json()
+        history = h.worklist.get(f"/cases/{summary['case_id']}").json()["history"]
+        assert sum(e["detail"].get("service") == "PredictUrgency" for e in history) == 3

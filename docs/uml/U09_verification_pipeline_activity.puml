@@ -1,6 +1,6 @@
 @startuml U09_verification_pipeline_activity
 !include style.iuml
-title U09 — Verification pipeline (activity, Sprint 2; replaces 01, state search instead of pattern matching)
+title U09 — Verification pipeline (activity, final; replaces 01, state search instead of pattern matching)
 
 start
 :Parse the pathway JSON (pathway-core model);
@@ -15,7 +15,7 @@ else (no)
   endif
   :Parse and type-check every branch condition;
 endif
-:Check task settings (DES-04):\nrole/service, deadline, escalation, retries,\nfallback, undo, duration, timer;
+:Check task settings (DES-04):\nrole/service, deadline, escalation, retries and answer timeout,\nfallback, undo, duration, timer, override check, announced event;
 :Deduplicate: one error per type, nodes and message,\nkeeping the shortest counterexample;
 if (any error?) then (yes)
   :UNSAFE;

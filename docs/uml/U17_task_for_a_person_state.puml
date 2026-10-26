@@ -1,25 +1,29 @@
 @startuml U17_task_for_a_person_state
 !include style.iuml
-title U17 — Task for a person (state machine, Sprint 4) · worklist + engine
+title U17 — Task for a person (state machine, final) · worklist + engine
 
 [*] --> Open : TaskRequested.worklist\n/ due_at = request time + deadline
-Open --> Claimed : claim (same role)
+Open --> Claimed : claim (same role)\n/ claimed_at (MON-02 waits)
 Claimed --> Open : release (by the claimant)
-Claimed --> Done : complete [outputs valid]\n/ TaskCompleted
+Claimed --> Done : complete [outputs valid,\nchanged suggestion has a reason (WRK-02)]\n/ TaskCompleted
+Claimed --> Failed : report a problem (reason)\n/ TaskFailed, permanent
 Open --> Open : TaskReassigned [level > current]\n/ role := next level, due_at reset
 Claimed --> Open : TaskReassigned [level > current]\n/ unclaimed, role := next level
 Open --> Cancelled : CancelRequested\nor case failed / compensated
 Claimed --> Cancelled : CancelRequested\nor case failed / compensated
 Done --> [*]
+Failed --> [*]
 Cancelled --> [*]
 note right of Open
   Escalation (ENG-06), driven by engine timers:
   deadline → level 1 role (e.g. charge_nurse);
   each level's afterMin → next level;
   after the last level → NotificationRequested to manager.
+  Every notification is also sent by email/SMS to the
+  role's alert contacts (WRK-03).
 end note
 note bottom of Done
-  Undo tasks (kind = undo, ENG-08) follow the same
-  states but answer Compensated instead of TaskCompleted.
+  Undo tasks (kind = undo, ENG-08) follow the same states
+  but answer Compensated (ok = false when a problem is reported).
 end note
 @enduml
