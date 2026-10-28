@@ -43,6 +43,15 @@ def token(c: httpx.Client, email: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def reactivate_demo_users(c: httpx.Client, admin: dict[str, str]) -> None:
+    """A demo account deactivated on the Users page cannot sign in; the seed turns it back on."""
+    demo = {email for _, email, _, _ in DEMO_USERS}
+    for user in c.get("/users", headers=admin).json():
+        if user["email"] in demo and not user["active"]:
+            c.patch(f"/users/{user['id']}", json={"active": True}, headers=admin).raise_for_status()
+            print(f"user {user['email']:32} reactivated")
+
+
 def install_deadlock_example(c: httpx.Client, designer: dict[str, str]) -> None:
     """The Verifier's worked example as an unfixed draft, so the demo can be repeated after someone
     fixed and published it in an earlier run (a published version is never changed: a new draft)."""
@@ -107,6 +116,7 @@ def main() -> None:
                 headers=admin,
             )
             print(f"user {email:32} {role:9} {'created' if r.status_code == 201 else r.json()['detail']}")
+        reactivate_demo_users(c, admin)
         designer = token(c, DEMO_USERS[0][1], DEMO_USERS[0][2])
         install_deadlock_example(c, designer)
         install_clinical(c, designer, admin)

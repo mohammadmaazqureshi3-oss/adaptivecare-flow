@@ -98,7 +98,14 @@ export function Users({ me }: { me: User }) {
               <td>{u.active ? "Active" : "Deactivated"}</td>
               <td>
                 {u.id !== me.id && (
-                  <button className="ghost" onClick={() => run(() => api.updateUser(u.id, { active: !u.active }))}>
+                  <button
+                    className="ghost"
+                    onClick={() => {
+                      // Deactivating locks the person out (they cannot sign in), so it is confirmed.
+                      if (u.active && !window.confirm(`Deactivate ${u.name} (${u.email})? They will no longer be able to sign in.`)) return;
+                      run(() => api.updateUser(u.id, { active: !u.active }));
+                    }}
+                  >
                     {u.active ? "Deactivate" : "Reactivate"}
                   </button>
                 )}
