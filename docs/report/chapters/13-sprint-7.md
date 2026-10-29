@@ -93,7 +93,8 @@ change was the three-line metrics hook of MON-03.
 Two finished runs are compared figure by figure: both 95% intervals, the difference of the means, and
 whether the intervals overlap. One scenario is called better only when they do not; overlapping
 intervals are reported as "no clear difference" rather than guessed. Whether lower or higher is
-better is known per metric (waits lower, targets met higher, utilisation neither). The changed
+better is known per metric (waits and the share of patients beyond a target's limit lower,
+patients completed higher, utilisation neither). The changed
 settings are listed, so the reason for a difference is visible.
 
 ### Final architecture

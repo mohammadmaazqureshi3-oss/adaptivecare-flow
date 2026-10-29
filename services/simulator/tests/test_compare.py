@@ -22,7 +22,7 @@ def est(mean: float, hw: float) -> dict[str, float]:
         ("wait_mean[nurse]", "lower"),
         ("deadline_miss[vitals]", "lower"),
         ("los_mean", "lower"),
-        ("target[wait_vitals<=10]", "higher"),
+        ("target[confirm,u<=2,wait>5]", "lower"),  # share of patients beyond the limit
         ("completed", "higher"),
         ("utilisation[nurse]", None),
     ],  # fmt: skip
@@ -36,6 +36,13 @@ def test_sim05_separate_intervals_name_the_better_scenario() -> None:
     assert row["distinct"] and row["better"] == "b" and row["difference"] == -12
     row = compare_metric("completed", est(300, 5), est(250, 5))
     assert row["distinct"] and row["better"] == "a"
+
+
+def test_sim05_fewer_patients_beyond_a_target_limit_is_better() -> None:
+    # A target metric is the share of patients who waited longer than the limit (2 nurses: 1%,
+    # 4 nurses: 0%), so the run with the smaller share is the better one.
+    row = compare_metric("target[confirm,u<=2,wait>5]", est(0.012, 0.002), est(0.0, 0.0))
+    assert row["distinct"] and row["better"] == "b" and row["better_is"] == "lower"
 
 
 def test_sim05_overlapping_intervals_cannot_tell_the_scenarios_apart() -> None:

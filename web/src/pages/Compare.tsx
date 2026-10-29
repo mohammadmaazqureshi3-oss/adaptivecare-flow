@@ -19,7 +19,7 @@ function label(metric: string): string {
     in_system: "Patients in the system",
     completed: "Patients completed",
     arrival_rate_per_min: "Arrivals per minute",
-    target: "Target met",
+    target: "Beyond the target limit",
   };
   return `${names[m[1]] ?? m[1]}${m[2] ? ` · ${m[2]}` : ""}`;
 }

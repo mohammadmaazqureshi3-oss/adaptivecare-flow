@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-LOWER_IS_BETTER = ("wait_mean[", "wait_p95[", "queue[", "deadline_miss[", "los_mean", "in_system")
-HIGHER_IS_BETTER = ("target[", "completed")
+# A target[...] metric is the share of patients who waited longer than the target's limit.
+LOWER_IS_BETTER = ("wait_mean[", "wait_p95[", "queue[", "deadline_miss[", "target[", "los_mean", "in_system")
+HIGHER_IS_BETTER = ("completed",)
 
 
 def metrics_of(result: dict[str, Any] | None) -> dict[str, dict[str, float]]:
