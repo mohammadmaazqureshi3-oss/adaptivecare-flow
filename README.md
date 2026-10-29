@@ -1,13 +1,75 @@
 # AdaptiveCare Flow
 
-A low-code platform for clinical pathways. Staff draw a pathway in an editor; the
-system proves it is safe (Algorithm 1, Verifier), predicts how many staff it needs
-(Algorithm 3, Simulator and Staffing Advisor), deploys it as its own microservice
-and runs it for every patient (Algorithm 2, Execution Engine).
+**A low-code platform for clinical pathways.** Hospital staff draw a care pathway as a flowchart.
+The system proves it is safe, predicts how many staff it needs, deploys it as its own
+microservice, and runs it for every patient by putting the right task in the right person's
+worklist at the right moment.
 
-Plan of record: `../sofware project_proposal.docx` (Final Project Plan, 23 Oct 2026).
+Built as a university software engineering project (Scrum, sprints 0–7 plus closure), with
+three algorithms at its core:
 
-## Start everything (NFR-POR-01)
+| | Algorithm | What it answers |
+|---|-----------|-----------------|
+| 1 | **Verifier** — state-space search over the pathway's token semantics | *Can a patient ever get stuck, have work done twice, or reach a step without its data?* |
+| 2 | **Execution Engine** — event-sourced token interpreter | *Where is each patient now, and what happens next?* Duplicate-safe, crash-safe, with retries, escalation and compensation. |
+| 3 | **Simulator and Staffing Advisor** — discrete-event simulation with 95% confidence intervals | *How long will patients wait with this staffing, and what is the cheapest staffing that meets our targets?* |
+
+![A deadlock found by the verifier and replayed step by step](docs/images/verify-deadlock.jpg)
+
+## Features
+
+- **Pathway editor** (React Flow): tasks for people, services or the ML model, decisions, merges,
+  parallel split/join, timers; variables with types; conditions checked as you type; deadlines,
+  escalation chains, retries, answer timeouts, fallbacks, undo actions and override checks.
+- **Verify** before publishing: five soundness properties plus data-flow and type checks, with
+  the shortest counterexample replayed token by token on the canvas.
+- **Immutable versions**: Draft → Verified → Published → Deployed → Draining → Retired. Running
+  cases always finish on the version they started on.
+- **Deploy** a published version as its own engine (one Docker container per version);
+  pathways chain through events (Triage → Assessment → Visit).
+- **Worklists** for nurses, charge nurses and doctors: claim, complete, release, report a problem;
+  overdue work escalates and sends email/SMS alerts.
+- **Decision support**: an urgency model (with SHAP reasons and calibrated confidence) and a
+  NEWS2 early-warning score service. A nurse always confirms, and changing the model's suggestion
+  requires a logged reason.
+- **Simulate and compare** staffing scenarios; the advisor recommends the cheapest staffing that
+  meets every deadline target.
+- **Monitoring**: dashboard, full case history and patient journey, service health and metrics,
+  Prometheus/Grafana, JSON logs with case ids.
+- **Security**: JWT login, a permission matrix at the gateway, separation of duties (designers
+  publish, only admins deploy), patient names and birth dates encrypted at rest.
+
+| Emergency triage pathway | Simulation and comparison |
+|---|---|
+| ![Triage pathway](docs/images/triage-pathway.jpg) | ![Comparing 2 and 4 nurses](docs/images/compare.jpg) |
+
+## Roles
+
+| Role | Does |
+|------|------|
+| Designer | Draws, verifies, simulates and publishes pathways |
+| Admin | Manages users, deploys and undeploys versions, monitors services, sets alert contacts |
+| Nurse | Registers patients, manages beds, does nursing tasks (vital signs, urgency confirmation, transfers) |
+| Charge nurse | Receives escalated overdue tasks; otherwise works as a nurse |
+| Doctor | Imaging and the doctor's review (admit or discharge) |
+| Manager | Dashboards, case histories, final escalation alerts, simulations |
+
+## Architecture
+
+Eleven FastAPI services behind one gateway, communicating through events (RabbitMQ topic
+exchange `care.events`; an in-memory bus in development), each with its own PostgreSQL schema.
+Every service uses the same token rules from the shared `pathway-core` package, so the
+verifier, simulator and engine always agree on what a pathway means.
+
+```
+web (React) ──► gateway ──► auth · designer · verifier · simulator · deployer
+                   │            patient · worklist · ml · scores · engine-<pathway>-v<n> …
+                   └──────────── events: care.events (RabbitMQ) ────────────┘
+```
+
+## Quick start
+
+### With Docker
 
 ```bash
 cp .env.example .env
@@ -16,25 +78,42 @@ docker compose up --build
 
 Open <https://localhost:8443> (a self-signed certificate is made at start; <http://localhost:8080>
 redirects there) and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
-<http://localhost:8000/health/all> shows every service's health; admins see health and
-request metrics under Monitoring → Services. Prometheus and Grafana (optional):
+<http://localhost:8000/health/all> shows every service's health. Prometheus and Grafana (optional):
 `docker compose --profile monitoring up -d`, then <http://localhost:9090> and
-<http://localhost:3000> (admin / `GRAFANA_ADMIN_PASSWORD`). Every service logs JSON lines with
-the case id (`LOG_FORMAT=text` for plain lines).
+<http://localhost:3000>. Every service logs JSON lines with the case id (`LOG_FORMAT=text` for
+plain lines).
 
-### Without Docker (the services built so far)
+### Without Docker (development)
 
-`dev.sh` runs every built service in one process with an in-memory bus in place of RabbitMQ.
-The deployer runs there with a local runtime: pressing Deploy (as admin) starts that version's
-engine in the same process instead of a Docker container.
+`dev.sh` runs every service in one process with an in-memory bus in place of RabbitMQ; pressing
+Deploy starts that version's engine in the same process.
 
 ```bash
+python3 -m venv .venv
+.venv/bin/pip install -e packages/pathway-core -e packages/care-events -e packages/service-metrics -r requirements-dev.txt
+cp .env.example .env
 ./scripts/dev.sh                          # gateway :8000 … simulator :8008, scores :8009, engines :8010+
 .venv/bin/python scripts/seed_demo.py     # demo users, beds, the clinical pathways verified, published, deployed
-npm --prefix web install && npm --prefix web run dev   # editor on http://localhost:5173
+npm --prefix web install && npm --prefix web run dev   # web app on http://localhost:5173
 ```
 
-Demo accounts (development only) are listed in `scripts/seed_demo.py`.
+### Demo accounts
+
+Development fixtures only (from `.env.example` and `scripts/seed_demo.py`); change them for any
+real deployment.
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@adaptivecare.test | admin-demo-1 |
+| Designer | designer@adaptivecare.test | designer-demo-1 |
+| Nurse | nurse@adaptivecare.test | nurse-demo-1 |
+| Charge nurse | charge@adaptivecare.test | charge-demo-1 |
+| Doctor | doctor@adaptivecare.test | doctor-demo-1 |
+| Manager | manager@adaptivecare.test | manager-demo-1 |
+
+To try it: sign in as the nurse, register a patient, and complete "Measure vital signs"; the
+urgency confirmation appears with the NEWS2 score and the model's suggestion. As the designer,
+open "Imaging (has a deadlock)" and press Verify.
 
 ## Develop and test
 
@@ -132,3 +211,27 @@ curl -s -X POST localhost:8000/verify -H 'content-type: application/json' -d @..
 | 6 | ML and the three clinical pathways | Done: ML-01/02 (synthetic data until the KTAS file is added), WRK-02, PAT-02, CLN-01..03 |
 | 7 | Hardening and measurement | Done: CLN-04, WRK-03, MON-01..03, SIM-05, NFR-SEC-05, NFR-PERF-01..04 measured; alpha test (SUS) still to run with classmates |
 | Closure | Acceptance, report, rehearsal | Done: requirements checked (`docs/closure/`), NFR-ROB-01 fixed (decision 0008), diagrams checked against the code, report built (`docs/report/`); open: alpha test, Docker run, rehearsals |
+
+## Quality
+
+About 650 Python tests (unit, property-based, fault-injection, replay and in-process system
+tests) at about 93% coverage, web unit tests with Vitest, and Playwright browser tests.
+`ruff`, `mypy --strict`, a cyclomatic complexity limit of 10, `bandit` and `pip-audit` all pass.
+Measured results for every non-functional requirement are in `docs/measurements/` and chapter 16
+of the report.
+
+## Known limitations
+
+- The Docker Compose, RabbitMQ and PostgreSQL paths are written but have not been run against live
+  daemons; all measurements come from the in-process runtime with SQLite.
+- The urgency model is trained on synthetic data; its accuracy is not clinical evidence.
+- This is decision support for a university project, not a medical device. Do not use it with
+  real patient data.
+
+## Documentation
+
+- `docs/report/` — the final report (chapters in Markdown and the built `.docx`)
+- `docs/decisions/` — design decisions 0001–0009
+- `docs/uml/` — PlantUML diagrams
+- `docs/closure/` — acceptance checklist, traceability, demo rehearsal
+- `docs/ai-log/` — how AI tools were used, sprint by sprint
