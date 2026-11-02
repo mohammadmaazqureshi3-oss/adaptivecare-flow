@@ -5,6 +5,9 @@
 testpaths = ["packages/pathway-core/tests", "packages/care-events/tests", "packages/service-metrics/tests", "services/verifier/tests", "services/auth/tests", "services/gateway/tests", "services/designer/tests", "services/patient/tests", "services/engine/tests", "services/worklist/tests", "services/deployer/tests", "services/simulator/tests", "services/ml/tests", "services/scores/tests", "tests/system", "tests/scripts"]
 pythonpath = ["packages/pathway-core/src", "packages/care-events/src", "packages/service-metrics/src", "services/verifier", "services/verifier/tests", "services/auth", "services/gateway", "services/designer", "services/patient", "services/engine", "services/engine/tests", "services/worklist", "services/ml", "services/deployer", "services/simulator", "services/simulator/tests", "services/ml/tests", "services/scores", "scripts"]
 addopts = "-q --import-mode=importlib"
+# Timing tests (NFR-PERF-01..04). CI runs them in their own step without coverage, because
+# line tracing slows the code being timed several times over.
+markers = ["perf: timing test of an NFR-PERF requirement"]
 
 [tool.coverage.run]
 branch = true

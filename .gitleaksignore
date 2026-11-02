@@ -1,0 +1,9 @@
+# Reviewed gitleaks findings that are not secrets (NFR-SEC-06).
+# Made-up signing keys used by the auth and gateway tests to check that valid tokens pass
+# and forged ones are refused:
+fb795fb5142d8b686be445db6043f5296f148dfc:services/gateway/tests/test_gateway.py:generic-api-key:19
+fb795fb5142d8b686be445db6043f5296f148dfc:services/gateway/tests/test_gateway.py:generic-api-key:94
+fb795fb5142d8b686be445db6043f5296f148dfc:services/auth/tests/test_auth.py:generic-api-key:19
+fb795fb5142d8b686be445db6043f5296f148dfc:services/auth/tests/test_auth.py:generic-api-key:111
+# An event routing key ("Compensated.visit.v1"), not a key:
+b006e02ebcda766c8761b1c053ff0479ffe6bf60:services/worklist/tests/test_worklist.py:generic-api-key:233

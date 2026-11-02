@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from builders import PATHWAYS, pw
 from fastapi.testclient import TestClient
 from verifier.algorithm import verify
 from verifier.main import app
 
 
+@pytest.mark.perf
 def test_nfr_perf_01_thirty_nodes_four_branches_under_two_seconds() -> None:
     tasks, arrows = [], []
     for b in range(4):

@@ -33,6 +33,7 @@ def store(tmp_path: Path) -> Iterator[Store]:
     st.engine.dispose()
 
 
+@pytest.mark.perf
 def test_nfr_perf_02_engine_event_latency_p95_under_200_ms_at_50_per_second(store: Store) -> None:
     bus = InMemoryBus()
     relay = OutboxRelay(store.sessions, bus, interval_s=0.005)

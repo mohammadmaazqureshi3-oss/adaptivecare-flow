@@ -145,6 +145,7 @@ def test_ml02_prediction_has_level_probabilities_reasons_and_version(model: Urge
     assert model.predict(MINOR).level >= 4
 
 
+@pytest.mark.perf
 def test_nfr_perf_04_prediction_under_100_ms_at_p95(model: UrgencyModel) -> None:
     times = []
     for _ in range(100):

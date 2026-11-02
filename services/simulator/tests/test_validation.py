@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from models import single_queue
 from pathway_core import Pathway
 from simulator.des import simulate
@@ -72,6 +73,7 @@ def test_sim04_one_nurse_under_heavy_load_waits_keep_growing() -> None:
     assert waits[0] < waits[1] < waits[2]  # λ = 8/h against 5/h of capacity: no steady state
 
 
+@pytest.mark.perf
 def test_nfr_perf_03_thirty_replications_of_seven_days_for_a_20_node_pathway_in_60_s() -> None:
     nodes = [
         {"id": "start", "type": "start", "trigger": "PatientRegistered"},

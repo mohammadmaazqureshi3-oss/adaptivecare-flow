@@ -21,7 +21,9 @@ jobs:
       - name: Types (mypy)
         run: mypy packages/pathway-core/src services/verifier/verifier services/auth/auth services/gateway/gateway services/designer/designer services/patient/patient services/engine/engine services/worklist/worklist services/ml/ml services/deployer/deployer services/simulator/simulator packages/care-events/src services/ml/training packages/service-metrics/src services/scores/scores scripts/export_uml.py scripts/load_test.py scripts/sus_score.py scripts/traceability.py scripts/build_report.py scripts/report_charts.py
       - name: Tests and coverage (NFR-MNT-01)
-        run: python -m pytest --cov --cov-report=term
+        run: python -m pytest --cov --cov-report=term -m "not perf"
+      - name: Performance (NFR-PERF-01..04, without coverage tracing)
+        run: python -m pytest -m perf -s
       - name: Complexity (NFR-MNT-02)
         # radon only lists functions rated C or worse (complexity > 10); any output fails the job.
         run: |
@@ -76,9 +78,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The gitleaks CLI over the whole history. The gitleaks GitHub Action scans only the
+      # pushed range and fails on a branch's first push (it asks for the root commit's parent).
+      # Reviewed false positives are listed in .gitleaksignore.
+      - name: Scan every commit for secrets (gitleaks)
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git --redact -v .
 
   images:
     needs: [quality, web]
