@@ -2,20 +2,13 @@
 // enters the vital signs, sees the NEWS2 score and the model's suggestion, and can change the
 // level only with a reason.
 import { expect, test } from "@playwright/test";
-import { login, taskCard } from "./helpers";
+import { login, registerPatient, taskCard } from "./helpers";
 
 test("CLN-01: a registered patient goes through triage with NEWS2, the model and an override", async ({ page }) => {
   await login(page, "nurse");
   await expect(page.getByRole("link", { name: "Pathways" })).toHaveCount(0); // AUTH-03: not for nurses
 
-  await page.getByRole("link", { name: "Patients" }).click();
-  await page.getByLabel("Full name").fill(`E2E Patient ${Date.now()}`);
-  await page.getByLabel("Date of birth").fill("1950-01-01");
-  await page.getByLabel("Arrival").selectOption("ambulance");
-  await page.getByLabel("Chief complaint").fill("chest pain, short of breath");
-  const registered = page.waitForResponse((r) => r.url().endsWith("/api/patients") && r.request().method() === "POST");
-  await page.getByRole("button", { name: "Register" }).click();
-  const mrn: string = (await (await registered).json()).mrn;
+  const mrn = await registerPatient(page);
 
   await page.getByRole("link", { name: "Tasks" }).click();
   const vitals = taskCard(page, mrn, "Measure vital signs");

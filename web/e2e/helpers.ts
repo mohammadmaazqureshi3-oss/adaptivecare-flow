@@ -20,3 +20,15 @@ export async function login(page: Page, who: keyof typeof ACCOUNTS): Promise<voi
 export function taskCard(page: Page, mrn: string, label: string) {
   return page.locator(".card.task").filter({ hasText: mrn }).filter({ hasText: label });
 }
+
+/** Registers a patient as the logged-in nurse (which starts a Triage case); returns the record number. */
+export async function registerPatient(page: Page, complaint = "chest pain, short of breath"): Promise<string> {
+  await page.getByRole("link", { name: "Patients" }).click();
+  await page.getByLabel("Full name").fill(`E2E Patient ${Date.now()}`);
+  await page.getByLabel("Date of birth").fill("1950-01-01");
+  await page.getByLabel("Arrival").selectOption("ambulance");
+  await page.getByLabel("Chief complaint").fill(complaint);
+  const registered = page.waitForResponse((r) => r.url().endsWith("/api/patients") && r.request().method() === "POST");
+  await page.getByRole("button", { name: "Register" }).click();
+  return (await (await registered).json()).mrn;
+}
